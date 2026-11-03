@@ -1,0 +1,30 @@
+# UTF-8
+# PyInstaller 版本资源：让任务栏 / 文件属性里显示「译读」，而不是空白或 EPUBReader
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 2, 0, 0),
+    prodvers=(1, 2, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '080404b0',
+        [StringStruct('CompanyName', '译读'),
+         StringStruct('FileDescription', '译读 · 英文阅读器'),
+         StringStruct('FileVersion', '1.2.0'),
+         StringStruct('InternalName', 'EPUBReader'),
+         StringStruct('LegalCopyright', 'Copyright © 2026 译读'),
+         StringStruct('OriginalFilename', 'EPUBReader.exe'),
+         StringStruct('ProductName', '译读'),
+         StringStruct('ProductVersion', '1.2.0'),
+         StringStruct('Comments', '本地 EPUB 英文阅读器，支持点词翻译、对照阅读与划线笔记')])
+    ]),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])
+  ]
+)

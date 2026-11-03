@@ -1,0 +1,9 @@
+# EPUB 英文阅读器（网页版）依赖清单
+# 安装命令： pip install -r requirements.txt
+
+EbookLib>=0.18          # 解析 EPUB 电子书
+beautifulsoup4>=4.12    # 解析/处理 HTML 文本（正文用内置 html.parser，无需 lxml）
+openai>=1.30            # 调用 OpenAI 兼容格式的大模型 API
+tenacity>=8.2           # API 失败自动重试
+Flask>=3.0              # 提供网页服务（后台）
+pywebview>=5.0          # 桌面 App 壳（app.py 用；不打 exe 可不装）
