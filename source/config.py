@@ -23,7 +23,12 @@ from dataclasses import dataclass
 # 普通 .py 运行时：与代码同目录
 # 被打包成 exe 后（PyInstaller）：__file__ 会指向临时解压目录，数据写进去
 # 会随退出丢失，所以改用 exe 所在目录，让书库 / 进度库跟 exe 放在一起。
-if getattr(sys, "frozen", False):
+# 安卓（Chaquopy）：代码打包在只读资源里，数据必须写到应用私有目录，
+# 启动时通过环境变量 YIDU_HOME 把可写目录指进来。
+_ENV_HOME = os.environ.get("YIDU_HOME")
+if _ENV_HOME:
+    _BASE_DIR = os.path.abspath(_ENV_HOME)
+elif getattr(sys, "frozen", False):
     _BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))

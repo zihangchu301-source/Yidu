@@ -1,0 +1,71 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+// 把网页资源同步进 APK 的 assets：直接复用仓库根目录的 static/ 和 source/templates/，
+// 不在仓库里存第二份副本，避免改了代码忘了同步。
+def syncStatic = tasks.register("syncWebStatic", Sync) {
+    from("${rootProject.projectDir}/../static") {
+        include "app.js", "style.css", "brand.png"
+    }
+    into "${projectDir}/src/main/assets/static"
+}
+
+def syncTemplates = tasks.register("syncWebTemplates", Sync) {
+    from("${rootProject.projectDir}/../source/templates") {
+        include "index.html"
+    }
+    into "${projectDir}/src/main/assets/templates"
+}
+
+tasks.named("preBuild").configure {
+    dependsOn syncStatic, syncTemplates
+}
+
+android {
+    namespace "com.zihang.yidu"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.zihang.yidu"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+        ndk {
+            // 只打真机常用的两种架构，APK 体积小一半
+            abiFilters "arm64-v8a", "armeabi-v7a"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        // 构建机上的 Python（GitHub Actions 里是 3.10）
+        buildPython("python3")
+        pip {
+            install "flask"
+            install "ebooklib"
+            install "beautifulsoup4"
+            install "tenacity"
+        }
+    }
+    sourceSets {
+        main {
+            // ../source 是主程序，../python_shims 提供 openai 兼容层和安卓启动入口
+            srcDirs = ["../source", "../python_shims"]
+        }
+    }
+}

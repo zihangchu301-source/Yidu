@@ -104,9 +104,17 @@ def _asset_version(app: Flask) -> str:
     return str(stamp)
 
 
-def create_app(cfg) -> Flask:
-    """创建并配置 Flask 应用。"""
-    app = Flask(__name__)
+def create_app(cfg, static_folder: str | None = None,
+               template_folder: str | None = None) -> Flask:
+    """创建并配置 Flask 应用。
+
+    static_folder / template_folder 只在“代码与数据不在同一目录”的场景需要，
+    比如安卓版（代码打包在只读资源里，static 要指向应用可写目录）。
+    桌面版 / exe 版传空即可，行为与以前完全一致。
+    """
+    app = Flask(__name__,
+                static_folder=static_folder or "static",
+                template_folder=template_folder or "templates")
     app.config["CFG"] = cfg
     store = Store(cfg.db_path)
     app.config["STORE"] = store

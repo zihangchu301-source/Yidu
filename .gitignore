@@ -9,6 +9,19 @@ source/build/
 source/dist/
 source/state/
 
+# ===== Android 构建 =====
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/static/
+android/app/src/main/assets/templates/
+android/captures/
+*.apk
+*.aab
+*.keystore
+*.jks
+
 # ===== Python 缓存 =====
 __pycache__/
 *.pyc
