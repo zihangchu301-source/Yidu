@@ -36,6 +36,14 @@ tasks.named("preBuild").configure {
     dependsOn syncStatic, syncTemplates, syncPython
 }
 
+// Chaquopy 的 mergeDebugPythonSources 会读取 src/main/python，必须显式声明依赖，
+// 否则 Gradle 8 的任务校验会直接报错（implicit dependency）。
+tasks.matching {
+    it.name != "syncPythonSources" && it.name.toLowerCase().contains("python")
+}.configureEach {
+    dependsOn syncPython
+}
+
 // 配置阶段先同步一次：不管哪个 Chaquopy 任务先跑，源码都已就位（这几步只是拷十几个小文件）
 syncPython.get().copy()
 
