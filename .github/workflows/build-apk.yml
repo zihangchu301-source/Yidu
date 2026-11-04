@@ -75,19 +75,16 @@ jobs:
           ls -l /tmp/appchk/assets/chaquopy/ 2>/dev/null || true
 
       - name: Assert Python code is bundled
-        continue-on-error: true
         run: |
           APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
-          unzip -l "$APK" | grep -q "assets/chaquopy/app.zip" && echo "有 app.zip" || echo "无 app.zip"
           rm -rf /tmp/appchk && mkdir -p /tmp/appchk
-          unzip -q -o "$APK" "assets/chaquopy/app.*" -d /tmp/appchk || true
-          ls -l /tmp/appchk/assets/chaquopy/ || true
-          for f in /tmp/appchk/assets/chaquopy/app.zip /tmp/appchk/assets/chaquopy/app.imy; do
-            if [ -f "$f" ]; then
-              echo "--- $f ---"
-              unzip -l "$f" | head -40 || true
-            fi
-          done
+          unzip -q -o "$APK" "assets/chaquopy/app.imy" -d /tmp/appchk
+          ls -l /tmp/appchk/assets/chaquopy/app.imy
+          unzip -l /tmp/appchk/assets/chaquopy/app.imy | tee /tmp/applist.txt | head -20
+          grep -q "server.pyc" /tmp/applist.txt || { echo "ERROR: app.imy 里没有 server 模块"; exit 1; }
+          grep -q "yidu_android.pyc" /tmp/applist.txt || { echo "ERROR: 缺 yidu_android"; exit 1; }
+          grep -q "openai" /tmp/applist.txt || { echo "ERROR: 缺 openai 兼容层"; exit 1; }
+          echo "OK: Python 业务代码齐全"
 
       - name: Report build error to release notes
         if: failure()
@@ -118,5 +115,6 @@ jobs:
             gh release create android-latest --prerelease \
               --title "安卓版（自动构建）" \
               --notes "每次推送自动覆盖更新的调试版 APK，直接下载安装即可。"
+          gh release edit android-latest --notes "最新构建已通过（$(date -u +%Y-%m-%dT%H:%MZ)）。下载 yidu-1.0-debug.apk 安装即可；首次启动在 App 内「设置」里填 API Key。"
           gh release upload android-latest android/app/build/outputs/apk/debug/yidu-1.0-debug.apk --clobber
           echo "下载地址：https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/yidu-1.0-debug.apk"
