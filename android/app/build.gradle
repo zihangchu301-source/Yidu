@@ -49,23 +49,28 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        main {
+            // ../source 是主程序，../python_shims 提供 openai 兼容层和安卓启动入口。
+            // 注意：Chaquopy 的 Python 源目录必须挂在 android.sourceSets 下，
+            // 写到 chaquopy { sourceSets { ... } } 里不会生效（会打出空壳 APK）。
+            python.srcDirs = ["../source", "../python_shims"]
+            python.exclude "static/**", "templates/**", "state/**",
+                    "build/**", "dist/**", "__pycache__/**"
+        }
+    }
 }
 
 chaquopy {
     defaultConfig {
-        // 构建机上的 Python（GitHub Actions 里是 3.10）
+        // 构建机上的 Python（GitHub Actions 里是 3.10，Chaquopy 会用自带的 3.8 运行时）
         buildPython("python3")
         pip {
             install "flask"
             install "ebooklib"
             install "beautifulsoup4"
             install "tenacity"
-        }
-    }
-    sourceSets {
-        main {
-            // ../source 是主程序，../python_shims 提供 openai 兼容层和安卓启动入口
-            srcDirs = ["../source", "../python_shims"]
         }
     }
 }
