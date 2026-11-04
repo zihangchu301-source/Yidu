@@ -37,7 +37,19 @@ jobs:
           gradle-version: "8.5"
 
       - name: Build debug APK
-        run: gradle -p android assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle -p android assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log | tail -50
+          status=$?
+          if [ $status -ne 0 ]; then
+            {
+              echo "## Gradle 失败摘要"
+              echo '```'
+              grep -nE "What went wrong|FAILURE|error:|Caused by|chaquopy|Chaquopy|python|Python" /tmp/build.log | head -80
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $status
+          fi
 
       - name: Inspect APK
         run: |
