@@ -37,9 +37,20 @@ jobs:
       - name: Build debug APK
         run: gradle -p android assembleDebug --no-daemon --stacktrace
 
+      - name: Verify APK contains Python runtime
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          ls -lh "$APK"
+          echo "--- python runtime entries ---"
+          unzip -l "$APK" | grep -Ei "libpython|chaquopy" | head -20 || true
+          unzip -l "$APK" | grep -qi "libpython" || { echo "ERROR: APK 里没有 libpython，Python 没打进去"; exit 1; }
+          unzip -l "$APK" | grep -qi "chaquopy" || { echo "ERROR: APK 里没有 chaquopy 资源"; exit 1; }
+          cp "$APK" android/app/build/outputs/apk/debug/yidu-1.0-debug.apk
+          echo "OK"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: yidu-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/yidu-1.0-debug.apk
           retention-days: 30
