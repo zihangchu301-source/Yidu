@@ -66,15 +66,16 @@ pyinstaller --noconfirm --clean EPUBReader.spec
 
 ## 安卓版
 
-`android/` 是通过 Chaquopy 把 Python 代码打进 APK 的方案：App 启动时在手机本地起 Flask 服务，再用 WebView 打开，**书籍和阅读进度都存在手机本地，断网也能读**（翻译仍需联网）。
+**直接下载安装**：[yidu-1.0-debug.apk](https://github.com/zihangchu301-source/Yidu/releases/download/android-latest/yidu-1.0-debug.apk)（在手机上打开此链接即可安装）
 
-构建不需要本地装 Android SDK —— 推送代码后 GitHub Actions 自动编译：
+App 内置 Python 3.10 运行时，启动时在手机本地起 Flask 服务再用 WebView 显示，**书籍、阅读进度、划线都存在手机本地，断网也能读**（AI 翻译仍需联网）。首次进入后到「设置」面板填 API Key。
 
-1. 打开仓库 **Actions → Build Android APK → Run workflow**
-2. 等 10~20 分钟，在运行记录的 **Artifacts** 里下载 `yidu-apk`
-3. 手机上允许「安装未知来源应用」后安装（debug 签名，仅供自用）
+构建不需要本地装 Android SDK —— 推送代码后 GitHub Actions 自动编译并覆盖上面的下载地址：
 
-已知限制：朗读（TTS）依赖 Windows 的 .NET 语音，安卓版暂不可用。
+- 修改 `source/` 里的 Python 代码或 `static/` 前端，推送到 main 即自动重新打包
+- 也可以手动触发：**Actions → Build Android APK → Run workflow**
+
+已知限制：朗读（TTS）依赖 Windows 的 .NET 语音，安卓版暂不可用；APK 为调试签名，仅供自用安装。
 
 ## 说明
 
