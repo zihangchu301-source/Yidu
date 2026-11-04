@@ -14,6 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,3 +56,14 @@ jobs:
           name: yidu-apk
           path: android/app/build/outputs/apk/debug/yidu-1.0-debug.apk
           retention-days: 30
+
+      - name: Publish rolling release (手机可直接下载)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest >/dev/null 2>&1 || \
+            gh release create android-latest --prerelease \
+              --title "安卓版（自动构建）" \
+              --notes "每次推送自动覆盖更新的调试版 APK，直接下载安装即可。"
+          gh release upload android-latest android/app/build/outputs/apk/debug/yidu-1.0-debug.apk --clobber
+          echo "下载地址：https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/yidu-1.0-debug.apk"
