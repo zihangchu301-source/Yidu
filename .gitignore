@@ -16,6 +16,7 @@ android/app/build/
 android/local.properties
 android/app/src/main/assets/static/
 android/app/src/main/assets/templates/
+android/app/src/main/python/
 android/captures/
 *.apk
 *.aab

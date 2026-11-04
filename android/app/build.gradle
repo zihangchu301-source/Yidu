@@ -19,9 +19,25 @@ def syncTemplates = tasks.register("syncWebTemplates", Sync) {
     into "${projectDir}/src/main/assets/templates"
 }
 
-tasks.named("preBuild").configure {
-    dependsOn syncStatic, syncTemplates
+// Python 源码同步到 Chaquopy 的默认目录 src/main/python。
+// 这样不依赖 srcDir 的相对路径解析（它按模块目录算，容易指错），
+// 也保证每次构建拿到的都是仓库根 source/ 的最新代码。
+def syncPython = tasks.register("syncPythonSources", Sync) {
+    from("${rootProject.projectDir}/../source") {
+        include "*.py"
+    }
+    from("${rootProject.projectDir}/../python_shims") {
+        include "*.py", "openai/**"
+    }
+    into "${projectDir}/src/main/python"
 }
+
+tasks.named("preBuild").configure {
+    dependsOn syncStatic, syncTemplates, syncPython
+}
+
+// 配置阶段先同步一次：不管哪个 Chaquopy 任务先跑，源码都已就位（这几步只是拷十几个小文件）
+syncPython.get().copy()
 
 android {
     namespace "com.zihang.yidu"
@@ -62,14 +78,6 @@ chaquopy {
             install "ebooklib"
             install "beautifulsoup4"
             install "tenacity"
-        }
-    }
-    sourceSets {
-        main {
-            // 相对路径是按模块目录 android/app 解析的，所以要用 ../../ 回到仓库根。
-            // ../ 会指到 android/source（不存在），结果打出没有 Python 代码的空壳 APK。
-            srcDir("../../source")
-            srcDir("../../python_shims")
         }
     }
 }
