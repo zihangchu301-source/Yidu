@@ -50,7 +50,7 @@ html.is-android .shelf-tools .btn-text {
   min-height: 38px;
 }
 html.is-android #btn-import { padding: 9px 14px; min-height: 38px; }
-html.is-android .shelf-stats { padding: 20px 12px 0; }
+html.is-android .shelf-stats { padding: 28px 12px 0; }
 html.is-android .book-grid {
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 16px 12px;
@@ -58,16 +58,8 @@ html.is-android .book-grid {
 }
 html.is-android .book-title { font-size: 13px; }
 
-/* 删除按钮在桌面是 hover 才浮现 → 手机上必须常驻，且够大能按 */
-html.is-android .book-del {
-  opacity: 1;
-  transform: none;
-  width: 36px;
-  height: 36px;
-  right: 6px;
-  top: 6px;
-  font-size: 15px;
-}
+/* 手机上不显示垃圾桶，改成长按书封面删除（mobile.js 里处理） */
+html.is-android .book-del { display: none !important; }
 
 /* ---------- 二、安卓：书架底栏常驻，阅读页底栏点击才出现 ---------- */
 html.is-android { --dock-h: 76px; }
@@ -151,10 +143,11 @@ html.is-android .translate-bar {
 html.is-android body.reader-chrome-open .translate-bar { bottom: var(--dock-h); }
 
 /* 顶部没有工具栏；底部给常驻栏留够空间，滚到底不压字 */
-html.is-android .reader-content { padding: 16px 0 112px; }
+html.is-android .reader-content { padding: 28px 0 112px; }
 html.is-android .book-grid { padding-bottom: 104px; }
 /* 大屏手机：底栏字号与点击区一并放大，避免"字小、点不准" */
-html.is-android .reader-title { font-size: 16px; min-width: 0; }
+/* 书名放不下还得截断，干脆不显示；底栏只留功能按钮 */
+html.is-android .reader-title { display: none !important; }
 html.is-android #btn-back { padding: 14px 10px; font-size: 15px; }
 html.is-android .reader-actions { gap: 2px; }
 html.is-android .lang-switch { padding: 3px; }
@@ -234,12 +227,9 @@ html.is-android .nd-item-ops button { padding: 9px 12px; font-size: 13px; }
 
 /* ---------- 五、其它小按钮 ---------- */
 /* 书架底栏常驻，Toast / 返回按钮别被压住 */
-html.is-android .back-panel {
-  left: 12px;
-  top: 12px;
-  bottom: auto;
-  padding: 12px 18px;
-}
+/* 左下角浮动的「返回词典/划线」是桌面遗留浮层，手机上不显示，
+   返回统一走底栏的「返回」或系统返回键 */
+html.is-android .back-panel { display: none !important; }
 html.is-android .toast { bottom: 108px; }
 /* 检查更新弹窗：版本信息里的换行要显示出来 */
 html.is-android #update-detail { white-space: pre-line; line-height: 1.8; }

@@ -39,6 +39,39 @@
     if (e.target.closest && e.target.closest(".cover-wrap")) setReaderChrome(false);
   });
 
+  /* ---- 1c. 书架：长按书封面删除（不显示垃圾桶图标） -------------------
+     直接触发原本的删除按钮 → 复用同一套确认弹窗与接口，不改动业务代码。 */
+  let longPressTimer = null;
+  let suppressClick = false;
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  };
+  bookGrid.addEventListener("touchstart", (e) => {
+    const card = e.target.closest && e.target.closest(".book-card");
+    if (!card) return;
+    cancelLongPress();
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      const del = card.querySelector(".book-del");
+      if (del) del.click();                 // 弹出「确定删除」确认框
+      if (navigator.vibrate) navigator.vibrate(30);
+      // 长按结束后 WebView 还会补发一个 click，别让它顺手把书打开
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 800);
+    }, 600);
+  }, { passive: true });
+  ["touchend", "touchcancel"].forEach((name) => {
+    bookGrid.addEventListener(name, cancelLongPress, { passive: true });
+  });
+  bookGrid.addEventListener("touchmove", cancelLongPress, { passive: true });
+  bookGrid.addEventListener("click", (e) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
   let tapStart = null;
   document.addEventListener("touchstart", (e) => {
     const t = e.target;
