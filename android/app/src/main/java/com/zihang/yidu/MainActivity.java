@@ -60,22 +60,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 顶部黑条根因（1.0.25 仍在，已定位）：
-        //   以前用 FLAG_FULLSCREEN 把状态栏隐藏掉，指望网页铺到状态栏区域。
-        //   但网页并没有真的铺进去 —— 那块地方交给"窗口背景"填，而主题是
-        //   Theme.Material（深色），于是白色页面正上方出现一条纯黑条；
-        //   深色页面时同样有，只是和深色底混在一起不明显。
-        // 现在的做法改成「保留状态栏、把它染成页面底色」（微信读书就是这么做的）：
-        //   状态栏始终由系统绘制，颜色由 applyChromeColor() 指定，
-        //   再也没有任何区域会露出系统深色底。
-        Window w = getWindow();
-        w.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // 内容从状态栏下方开始，状态栏区域完全由系统按我们给的颜色画
-            w.setDecorFitsSystemWindows(true);
-        } else {
-            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        }
+        // 顶部黑条根因（1.0.26 已定位并修掉，别再改回深色主题）：
+        //   以前主题是 Theme.Material（深色），用 FLAG_FULLSCREEN 隐藏状态栏后，
+        //   那块区域交给"窗口背景"填 → 白色页面正上方出现纯黑条。
+        // 现在主题换成浅色（AppTheme）+ 三层底色兜底，可以安全地做沉浸式了：
+        //   隐藏状态栏 + 让内容真的铺到屏幕最顶上。即便某台 ROM 没铺满，
+        //   露出的也是页面同色，不会再是黑条。
+        hideSystemBars();
         chromeDark = readDarkTheme();
         applyChromeColor(chromeDark);
 
@@ -272,11 +263,46 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * 沉浸式：隐藏状态栏，让网页一直画到屏幕最顶端（只留文章内容）。
+     *
+     * 为什么不会再出现黑条：主题已经是浅色的 AppTheme，且窗口 / decorView / WebView
+     * 三层底色都由 applyChromeColor() 刷成页面同色。状态栏区域要么被网页盖住（正常），
+     * 要么露出同样颜色的窗口底（兜底），不可能再是纯黑。
+     *
+     * 从通知栏下拉、切回前台、弹过键盘之后系统会把状态栏又显示出来，
+     * 所以在 onWindowFocusChanged 里再调一次。
+     */
+    private void hideSystemBars() {
+        Window w = getWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            w.setDecorFitsSystemWindows(false);
+            WindowInsetsController ctl = w.getDecorView().getWindowInsetsController();
+            if (ctl != null) {
+                ctl.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                ctl.hide(WindowInsets.Type.statusBars());
+            }
+        } else {
+            // 旧系统：LAYOUT_FULLSCREEN 让内容延伸上去，FULLSCREEN 把状态栏藏掉
+            w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            w.getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemBars(); // 从通知栏 / 其他应用回来时，重新进入沉浸式
+    }
+
+    /**
      * 窗口、状态栏、导航栏、WebView 底色统一跟着页面主题走。
      *
-     * 关键改动（消灭顶部黑条）：状态栏不再隐藏，而是**直接染成页面底色**。
-     * 系统始终自己画状态栏，只是用我们给的颜色，所以不可能再露出深色窗口底；
-     * 图标明暗也一起适配，浅色底用深色图标（否则白底上白图标看不见）。
+     * 状态栏虽然被隐藏了，颜色仍然要设：部分 ROM 在切换瞬间会短暂露出状态栏底色，
+     * 设成页面同色就不会闪一下黑条。图标明暗也一起适配（浅色底用深色图标）。
      */
     private void applyChromeColor(boolean dark) {
         chromeDark = dark;
