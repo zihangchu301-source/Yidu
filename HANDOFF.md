@@ -6,16 +6,16 @@
 
 | 用途 | 路径 |
 |---|---|
-| **主仓库（本地，唯一带 git / 能触发 CI）** | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu-repo` |
+| **手机版主开发目录（推荐，含完整 .git）** | `D:\yidu` |
 | **远程仓库** | https://github.com/zihangchu301-source/Yidu |
+| 主仓库原始副本（同样含 .git） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu-repo` |
 | 桌面版**实际运行目录**（含数据、exe） | `D:\EPUBReader` |
-| 桌面版上传快照（纯净源码，无数据） | `D:\EPUBReader_Upload` |
 | 桌面版工作副本（2026-11-05 迁移） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_desktop` |
-| 手机版源码快照（2026-11-05 迁移，无 .git） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_phone` |
+| 手机版源码快照（无 .git，别改） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_phone` |
 | 安卓签名密钥备份（**勿外泄**） | `E:\workbuddyClaw\2026-11-03-18-15-07\signing\` |
 | 本次会话工作日志 | `E:\workbuddyClaw\2026-11-03-18-15-07\.workbuddy\memory\2026-11-05.md` |
 
-主仓库是**唯一构建来源**：只有改 `Yidu-repo` 并 `git push` 才会触发自动打包。
+`D:\yidu` 和 `E:\...\Yidu-repo` 都是**完整 git 仓库**、内容一致、指向同一远程。**以后只在 `D:\yidu` 改代码并 `git push`**；E 盘那份是原位置备份，别两边同时改以免冲突。只有 git push 才会触发自动打包。
 `Yidu_phone` 是纯源码快照（**不含 .git**），仅供查看/交接，改它不会发布。
 `Yidu_desktop` 是 `D:\EPUBReader` 的完整副本（含 `config.ini` 明文密钥、`state/reader.db` 阅读记录、`static/books` 书籍缓存），**不要提交到任何仓库**。原 `D:\EPUBReader` 保留未动。
 桌面版目录是另一份可直接运行的副本，改它不会更新 APK。
@@ -112,7 +112,7 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 ## 9. 常用命令
 
 ```bash
-cd /e/workbuddyClaw/2026-11-03-18-15-07/Yidu-repo
+cd /d/yidu
 git status && git log --oneline -3
 git add -A && git commit -m "..." && git push origin main   # 自动触发打包
 
@@ -133,7 +133,8 @@ unzip -p yidu.apk assets/version.json
 
 - 先读 `.workbuddy/memory/` 里最近的日志，再动手
 - `.workbuddy/` 是项目数据，**不要删**
-- 工作区有 4 个并列目录：`Yidu-repo`（唯一 git 仓库）、`Yidu_desktop`（桌面版副本）、`Yidu_phone`（源码快照）、`signing`（密钥）。**只在 `Yidu-repo` 里改代码和提交**
+- **手机版源码统一在 `D:\yidu`**（完整 git 仓库），改完 `git push` 即自动发布；E 盘 `Yidu-repo` 是原位置备份，别两边同时改
+- 工作区另有 `Yidu_desktop`（桌面版副本）、`Yidu_phone`（无 .git 的源码快照）、`signing`（密钥），都不要在里面改手机版代码
 - 改安卓前端只动 `static/` 下文件和 `app.js` 的 `IS_ANDROID` 分支；桌面行为不能回归
 - 改完推 `main`，等 Actions 成功，把**带版本号的唯一链接**给用户；不要给会被缓存的固定链接
 - 用户偏好：直接给方案、先说风险与改动范围、文档简洁、参考图只作参考不照搬、不臆测系统原因
