@@ -21,6 +21,20 @@
   const importText = document.getElementById("btn-import-text");
   if (importText) importText.textContent = "导入";
 
+  /* ---- 0b. 顶部状态栏区域跟随页面主题，避免浅色页面配黑条 -------------- */
+  function syncChromeColor() {
+    if (window.YiduNative && window.YiduNative.setChromeDark) {
+      window.YiduNative.setChromeDark(body.dataset.theme === "dark");
+    }
+  }
+  syncChromeColor();
+  try {
+    new MutationObserver(syncChromeColor).observe(body, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+  } catch (err) { /* 老 WebView 没有 MutationObserver 时只同步一次 */ }
+
   /* ---- 1. 阅读页工具栏：点一下正文切换显隐 ------------------------------
      书架底栏由 CSS 常驻，这里只管阅读页。 */
   function setReaderChrome(open) {

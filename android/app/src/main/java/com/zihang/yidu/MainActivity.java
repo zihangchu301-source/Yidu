@@ -3,7 +3,6 @@ package com.zihang.yidu;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
-import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.content.Context;
 import android.content.Intent;
@@ -17,10 +16,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -56,25 +52,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 顶部不显示系统状态栏的时间/信号/电量；静态设置，没有任何模式切换。
-        // 黑条来自 Theme.Material.NoActionBar 的深色窗口底色：状态栏隐藏后那块区域露出来了。
-        // 两个办法一起上：让 WebView 自己画到屏幕顶端 + 窗口底色兜成页面同色。
+        // 顶部不显示系统状态栏的时间/信号/电量；静态一次设置，没有任何模式切换。
+        // 之前的黑框是状态栏那块区域露出的深色窗口/状态栏底色，
+        // 这里直接把它刷成页面同色，主题切换时由前端 setChromeDark 同步更新。
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        getWindow().setBackgroundDrawable(new ColorDrawable(0xFFF7F7F5));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            getWindow().setDecorFitsSystemWindows(false);
-            WindowInsetsController ctl = getWindow().getDecorView().getWindowInsetsController();
-            if (ctl != null) ctl.hide(WindowInsets.Type.statusBars());
-        } else {
-            View decor = getWindow().getDecorView();
-            decor.setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            getWindow().setStatusBarColor(Color.TRANSPARENT);
-        }
+        applyChromeColor(false);
 
         File home = getFilesDir();
         try {
@@ -128,6 +110,12 @@ public class MainActivity extends Activity {
             @JavascriptInterface
             public void downloadUpdate(String url, String version) {
                 runOnUiThread(() -> startUpdateDownload(url, version));
+            }
+
+            // 前端切换深/浅主题时同步状态栏与窗口底色，避免顶部出现异色条
+            @JavascriptInterface
+            public void setChromeDark(boolean dark) {
+                runOnUiThread(() -> applyChromeColor(dark));
             }
         }, "YiduNative");
         webView.setWebChromeClient(new WebChromeClient() {
@@ -245,6 +233,16 @@ public class MainActivity extends Activity {
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
             }
+        }
+    }
+
+    /** 状态栏区域 + 窗口底色刷成页面同色，彻底消掉顶部黑框。 */
+    private void applyChromeColor(boolean dark) {
+        int color = dark ? 0xFF16181C : 0xFFF7F7F5;
+        getWindow().setBackgroundDrawable(new ColorDrawable(color));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(color);
+            getWindow().setNavigationBarColor(color);
         }
     }
 

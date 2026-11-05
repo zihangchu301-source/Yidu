@@ -114,16 +114,20 @@ html.is-android #btn-import {
   min-height: 56px;
   font-size: 14px;
   justify-content: center;
+  border-radius: 14px;
 }
+html.is-android .shelf-tools .btn-text:active { background: var(--bg); }
+html.is-android #btn-import { font-weight: 600; }
 html.is-android .btn-import-plus { display: none; }
 
 
 /* 阅读界面：默认全部隐藏，只有正文；点一下屏幕才浮出 */
 html.is-android .reader-header {
-  padding: 10px 8px 16px;
-  gap: 3px;
+  padding: 8px 10px 16px;
+  gap: 8px;
+  align-items: center;
   height: auto;
-  min-height: 68px;
+  min-height: 64px;
   transform: translateY(115%);
   opacity: 0;
   pointer-events: none;
@@ -137,7 +141,7 @@ html.is-android body.reader-chrome-open .reader-header {
 /* chrome-hidden 是桌面"鼠标移开就收起"的遗留类，别覆盖上面的隐藏状态 */
 html.is-android .view.chrome-hidden .reader-header {
   max-height: none;
-  padding-top: 10px;
+  padding-top: 8px;
   padding-bottom: 16px;
   border-bottom-color: transparent;
 }
@@ -154,15 +158,48 @@ html.is-android body.reader-chrome-open .translate-bar { bottom: var(--dock-h); 
 /* 顶部没有工具栏；底部给常驻栏留够空间，滚到底不压字 */
 html.is-android .reader-content { padding: 28px 0 112px; }
 html.is-android .book-grid { padding-bottom: 104px; }
-/* 大屏手机：底栏字号与点击区一并放大，避免"字小、点不准" */
-/* 书名放不下还得截断，干脆不显示；底栏只留功能按钮 */
+/* 大屏手机：底栏统一视觉 —— 等高、同圆角、同配色、均匀分布。
+   去掉桌面的深灰胶囊和实心绿圆，避免看着"各是各的"。 */
 html.is-android .reader-title { display: none !important; }
-html.is-android #btn-back { padding: 14px 10px; font-size: 15px; }
-html.is-android .reader-actions { gap: 2px; }
-html.is-android .lang-switch { padding: 3px; }
-html.is-android .lang-switch button { padding: 12px 9px; font-size: 15px; }
-html.is-android .reader-actions .btn-text { padding: 14px 10px; font-size: 15px; }
-html.is-android .btn-more { padding: 12px 12px; font-size: 22px; }
+html.is-android .reader-actions {
+  flex: 1;
+  justify-content: space-between;
+  gap: 4px;
+}
+html.is-android #btn-back,
+html.is-android .reader-actions .btn-text,
+html.is-android .btn-more,
+html.is-android .lang-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 15px;
+  color: var(--text-soft);
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+html.is-android #btn-back { padding: 0 14px; flex: 0 0 auto; }
+html.is-android .reader-actions .btn-text { padding: 0 12px; }
+html.is-android .btn-more { padding: 0 14px; font-size: 20px; }
+html.is-android #btn-back:active,
+html.is-android .reader-actions .btn-text:active,
+html.is-android .btn-more:active { background: var(--bg); }
+
+html.is-android .lang-switch {
+  padding: 0;
+  gap: 2px;
+  flex: 0 0 auto;
+  background: transparent;
+}
+html.is-android .lang-switch button { padding: 0 12px; }
+/* 选中态改成浅绿底 + 绿字，不再是一坨实心绿圆 */
+html.is-android .lang-switch button.active {
+  background: rgba(7, 193, 96, 0.14);
+  color: var(--accent);
+  font-weight: 600;
+}
 html.is-android .more-dropdown button { padding: 16px 18px; font-size: 16px; }
 html.is-android .more-dropdown { min-width: 168px; }
 
