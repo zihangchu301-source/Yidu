@@ -1,6 +1,6 @@
 # 译读 · 项目交接文档
 
-> 最后更新：2026-11-05 · 安卓最新版 **1.0.26**（version_code 26）
+> 最后更新：2026-11-05 · 安卓最新版 **1.0.27**（version_code 27）
 
 ## 1. 源码在哪
 
@@ -95,20 +95,20 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 - 安卓不显示书名、左下角浮层返回、TTS 朗读
 
 之前踩过的坑（**别改回去**）：`python.srcDirs` 相对路径按模块目录解析、Chaquopy 任务需显式 `dependsOn`、代码包叫 `app.imy` 不是 `app.zip`、固定链接会被 CDN 缓存成旧包。
-**顶部黑条（1.0.26 已修，别再改回隐藏状态栏）**：主题原本是 `Theme.Material.NoActionBar`（深色），一旦用 `FLAG_FULLSCREEN` 隐藏状态栏，状态栏那块区域就由窗口背景填 → 白色页面上出现纯黑条。正确做法是**保留状态栏并染色**：`res/values/styles.xml` 的 `AppTheme` 继承 `Theme.Material.Light.NoActionBar`，`applyChromeColor()` 里 `setStatusBarColor/setNavigationBarColor` 设为页面底色，API 30+ 用 `setSystemBarsAppearance`、旧版用 `SYSTEM_UI_FLAG_LIGHT_STATUS_BAR` 调图标明暗。**不要再加 `FLAG_FULLSCREEN` / `setDecorFitsSystemWindows(false)` / `hide(statusBars())`。**
+**顶部黑条 + 沉浸式（1.0.26 → 1.0.27，别再改回深色主题）**：黑条的真正原因是主题 `Theme.Material.NoActionBar`（深色）—— 隐藏状态栏后那块区域由窗口背景填充，白色页面上就露出纯黑条。1.0.26 先改成"保留状态栏 + 染色"，1.0.27 又改回沉浸式（隐藏状态栏、内容铺满），**前提是主题已换成浅色 `AppTheme` 且三层底色兜底**。实现见 `MainActivity.hideSystemBars()`（API 30+ 用 `setDecorFitsSystemWindows(false)` + `WindowInsetsController.hide(statusBars())`，旧系统 `LAYOUT_FULLSCREEN|FULLSCREEN`，并在 `onWindowFocusChanged` 里重设）。**不要**把主题改回 `Theme.Material` 再套 FLAG_FULLSCREEN —— 那正是黑条的成因。
 
 ## 8. 当前状态与待办
 
-**已完成**：1.0.26 发布（顶部黑条根治：状态栏改为染色，主题换 Light），此前完成 v1+v2 签名、固定密钥、应用内更新链路加固（11 项）、书架/阅读页布局、底栏放大与美化。
+**已完成**：1.0.27 发布（沉浸式：隐藏状态栏 + 内容铺满，黑条同时消失；主题换成浅色 AppTheme），此前完成 1.0.26 状态栏染色、v1+v2 签名、固定密钥、应用内更新链路加固（11 项）、书架/阅读页布局、底栏放大与美化。
 
-**待确认**：1.0.26 装上后顶部是否还有黑条。此前多次出现下载到缓存旧包，排查任何界面问题前**先让用户点「检查更新」确认版本号 ≥ 1.0.26**。
+**待确认**：1.0.27 装上后顶部是否既无状态栏、也无黑条（并确认弹窗里版本号 ≥ 1.0.27，此前多次出现下载到缓存旧包）。
 
 **待办**：
 
 1. `D:\EPUBReader\config.ini` 里 DeepSeek API Key 明文存储 → 需轮换密钥并改用环境变量/系统凭据
 2. 手机与电脑数据不互通 → 需账号 + 云端数据库，或做导出/导入
 3. 安卓版 TTS 朗读不可用（依赖 Windows .NET 语音）
-4. 若 1.0.26 仍有黑条：先确认「隐藏刘海/挖孔」系统开关是否开启（开启时该区域由 ROM 强制涂黑，任何 App 都画不进去），再考虑 `layoutInDisplayCutoutMode`
+4. 若 1.0.27 顶部内容被挖孔/刘海遮挡：在 `hideSystemBars()` 里加 `layoutInDisplayCutoutMode=SHORT_EDGES`，并把 `getDisplayCutout().getSafeInsetTop()` 通过 JS 接口传给前端做 `padding-top`
 
 ## 9. 常用命令
 
