@@ -11,7 +11,7 @@
 -->
 <!-- translate="no" + notranslate：告诉浏览器「别翻译本页」。
      阅读器自带翻译/对照，浏览器再翻一遍会和我们的文字互相打架（用户反馈过的冲突）。 -->
-<html lang="zh-CN" translate="no">
+<html lang="zh-CN" translate="no" class="{{ 'is-android' if android else '' }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,6 +24,8 @@
        改了前端文件后 URL 会变，浏览器一定会加载新版本，
        彻底避免“改了却看到旧界面、要手动强刷”的老问题（见给AI的项目说明.md） -->
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <!-- 安卓 WebView 专用适配层：只有 <html class="is-android"> 时生效 -->
+  <link rel="stylesheet" href="/static/mobile.css?v={{ asset_version }}">
 </head>
 
 <!-- 默认字号 / 主题由后台 config.ini 注入，存在 data-* 上，app.js 会读取 -->
@@ -460,5 +462,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="/static/app.js?v={{ asset_version }}"></script>
+<!-- 触摸交互补丁，必须在 app.js 之后 -->
+<script src="/static/mobile.js?v={{ asset_version }}"></script>
 </body>
 </html>

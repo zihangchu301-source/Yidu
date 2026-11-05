@@ -1,0 +1,167 @@
+/* ==========================================================================
+   mobile.css —— 仅安卓 WebView 生效（<html class="is-android">）
+   --------------------------------------------------------------------------
+   桌面版是给鼠标 + 宽屏设计的：hover 才出现的按钮、靠 mousemove 收起的顶栏、
+   一排塞满的工具按钮、固定 320px 的气泡。这些在手机上全都会出问题。
+   这里统一按"手指 + 窄屏"重排，桌面版一个像素都不受影响。
+   ========================================================================== */
+
+/* ---------- 基础：禁止横向溢出 / 下拉刷新，去掉点击高亮方块 ---------- */
+html.is-android,
+html.is-android body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 100vh 在安卓状态栏/键盘弹出时不准，用动态视口高度 */
+html.is-android #reader-view.active { height: 100dvh; }
+
+/* 正文：可长按选词，但别弹出系统自带的复制菜单跟我们的操作栏打架 */
+html.is-android .reader-content,
+html.is-android .reader-content .seg {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: none;
+}
+html.is-android .reader-content { -webkit-overflow-scrolling: touch; }
+html.is-android .reader-content .inner {
+  max-width: 100%;
+  padding: 0 16px;
+  line-height: 1.85;
+}
+
+/* ---------- 一、书架 ---------- */
+html.is-android .shelf-header {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px 8px;
+}
+html.is-android .shelf-heading h1 { font-size: 17px; }
+html.is-android .shelf-tools {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+html.is-android .shelf-tools .btn-text {
+  padding: 9px 10px;
+  font-size: 13px;
+  min-height: 38px;
+}
+html.is-android #btn-import { padding: 9px 14px; min-height: 38px; }
+html.is-android .shelf-stats { padding: 12px 12px 0; }
+html.is-android .book-grid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 16px 12px;
+  padding: 16px 12px 80px;
+}
+html.is-android .book-title { font-size: 13px; }
+
+/* 删除按钮在桌面是 hover 才浮现 → 手机上必须常驻，且够大能按 */
+html.is-android .book-del {
+  opacity: 1;
+  transform: none;
+  width: 36px;
+  height: 36px;
+  right: 6px;
+  top: 6px;
+  font-size: 15px;
+}
+
+/* ---------- 二、阅读器顶栏：常驻 + 压缩，绝不溢出 ---------- */
+html.is-android .reader-header {
+  padding: 5px 6px;
+  gap: 4px;
+  height: auto;
+  min-height: 50px;
+  max-height: none;
+}
+/* 保险：即便老逻辑加了 chrome-hidden，手机上也强制显示 */
+html.is-android .view.chrome-hidden .reader-header {
+  max-height: none;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  opacity: 1;
+  border-bottom-color: var(--border);
+}
+html.is-android .reader-title { font-size: 13px; }
+html.is-android #btn-back { padding: 10px 8px; font-size: 13px; }
+html.is-android .reader-actions { gap: 1px; }
+html.is-android .lang-switch { padding: 1px; }
+html.is-android .lang-switch button { padding: 8px 7px; font-size: 12px; }
+html.is-android .reader-actions .btn-text { padding: 10px 7px; font-size: 13px; }
+html.is-android .btn-more { padding: 8px 10px; }
+html.is-android .more-dropdown button { padding: 12px 14px; font-size: 14px; }
+
+/* 安卓后端没有 Windows 语音；全屏 API 在 WebView 也会把顶栏弄没 */
+html.is-android #btn-tts,
+html.is-android #tts-bar,
+html.is-android #sel-toolbar [data-action="tts"],
+html.is-android #btn-immersive { display: none !important; }
+
+/* ---------- 三、划词操作栏：触控尺寸 + 不被裁切 ---------- */
+html.is-android .sel-toolbar { padding: 6px; gap: 2px; max-width: calc(100vw - 16px); flex-wrap: wrap; }
+html.is-android .sel-toolbar button {
+  padding: 10px 12px;
+  min-height: 42px;
+  font-size: 13px;
+}
+html.is-android .bubble {
+  width: min(320px, calc(100vw - 24px));
+  max-height: 60dvh;
+  cursor: default;
+}
+html.is-android .bubble-actions button { padding: 12px 0; font-size: 14px; }
+html.is-android .note-bubble { width: min(340px, calc(100vw - 24px)); }
+html.is-android .note-bubble-head button { padding: 8px 10px; }
+
+/* ---------- 四、弹窗：铺满宽度，避免固定宽度被裁 ---------- */
+html.is-android .modal-box {
+  width: calc(100vw - 24px);
+  max-width: none;
+  max-height: 86dvh;
+}
+html.is-android .modal-box-sm { width: calc(100vw - 32px); }
+html.is-android .notes-box {
+  width: calc(100vw - 16px);
+  height: min(84dvh, 700px);
+}
+html.is-android .modal-head { padding: 14px 16px; }
+html.is-android .modal-close { padding: 8px 10px; font-size: 14px; }
+html.is-android .setting-row { flex-wrap: wrap; gap: 10px; padding: 14px 16px; }
+html.is-android .setting-controls { flex-wrap: wrap; justify-content: flex-end; }
+html.is-android .setting-input,
+html.is-android .setting-input-sm { width: 100%; margin-left: 0; flex: 1 1 100%; font-size: 16px; }
+html.is-android .setting-actions button { padding: 12px 18px; }
+html.is-android .toc-list li { padding: 14px 16px; }
+html.is-android .confirm-actions button { padding: 12px 18px; }
+
+/* 桌面"并排浮窗"在手机上改成底部抽屉，否则会盖住整屏正文 */
+html.is-android .modal.panel-float {
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  align-items: flex-end;
+}
+html.is-android .modal.panel-float .modal-box,
+html.is-android .modal.panel-float .notes-box {
+  width: 100vw;
+  height: 70dvh;
+  max-height: 70dvh;
+  border-radius: 16px 16px 0 0;
+}
+html.is-android .notes-head { padding: 12px 12px; }
+html.is-android .notes-head-pad { width: 40px; }
+html.is-android #notes-detail-close,
+html.is-android .dict-head-close { width: 40px; height: 40px; }
+html.is-android .nb-card { margin: 12px 12px 0; padding: 14px; }
+
+/* 笔记本条目的操作按钮也是 hover 才显示 → 常驻并加大点击区 */
+html.is-android .nd-item { flex-wrap: wrap; margin: 0 12px 10px; }
+html.is-android .nd-item-main { padding-right: 0; }
+html.is-android .nd-item-ops { opacity: 1; width: 100%; justify-content: flex-end; }
+html.is-android .nd-item-ops button { padding: 9px 12px; font-size: 13px; }
+
+/* ---------- 五、其它小按钮 ---------- */
+html.is-android .back-panel { left: 12px; bottom: 16px; padding: 12px 18px; }
+html.is-android .toast { bottom: 100px; }

@@ -7,7 +7,7 @@ plugins {
 // 不在仓库里存第二份副本，避免改了代码忘了同步。
 def syncStatic = tasks.register("syncWebStatic", Sync) {
     from("${rootProject.projectDir}/../static") {
-        include "app.js", "style.css", "brand.png"
+        include "app.js", "style.css", "brand.png", "mobile.css", "mobile.js"
     }
     into "${projectDir}/src/main/assets/static"
 }

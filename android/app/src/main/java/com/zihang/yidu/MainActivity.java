@@ -66,6 +66,11 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        // 禁止双击缩放 / 系统字号放大：手机端排版必须稳定，否则按钮会被挤没
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        s.setTextZoom(100);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         webView.setWebViewClient(new android.webkit.WebViewClient());
@@ -98,7 +103,8 @@ public class MainActivity extends Activity {
         setContentView(webView, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-        webView.loadUrl("http://127.0.0.1:" + port + "/");
+        // ?android=1 让服务端给 <html> 加 is-android，前端启用触摸适配层
+        webView.loadUrl("http://127.0.0.1:" + port + "/?android=1");
     }
 
     @Override
@@ -130,11 +136,21 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
+        if (webView == null) {
+            super.onBackPressed();
             return;
         }
-        super.onBackPressed();
+        // 安卓返回键先关弹窗 / 气泡，再退回书架，最后才退出 App
+        webView.evaluateJavascript(
+                "(function(){try{return window.__yiduBack&&window.__yiduBack()?'1':'0';}catch(e){return '0';}})()",
+                value -> {
+                    if (value != null && value.contains("1")) return;
+                    if (webView != null && webView.canGoBack()) {
+                        webView.goBack();
+                    } else {
+                        finish();
+                    }
+                });
     }
 
     private void copyAssetDir(String assetPath, File target) throws IOException {

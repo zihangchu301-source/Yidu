@@ -18,6 +18,11 @@
 
 /* ============================ 1. 全局状态与工具 ============================ */
 
+// 安卓版：MainActivity 用 /?android=1 打开，服务端给 <html> 加 is-android。
+// 下面所有桌面端的鼠标专属交互（悬停显隐 / 拖动 / 顶栏自动收起）在这条分支里关掉，
+// 改由 mobile.js 的触摸逻辑接管。桌面版行为完全不变。
+const IS_ANDROID = document.documentElement.classList.contains("is-android");
+
 // 当前正在读的书、章节、该章的中文缓存等
 const state = {
   book: null,            // {book_hash, title, ...}
@@ -113,6 +118,8 @@ function clampToWindow(left, top, w, h, margin) {
 
 /** 让一个浮窗（.notes-box / .modal-box）可以按住标题栏（handleSelector）拖动。 */
 function makePanelDraggable(box, handleSelector) {
+  // 触屏没有 mousemove，拖动只会吃掉点击和滚动，安卓版直接禁用
+  if (IS_ANDROID) return;
   let drag = null;
   box.addEventListener("mousedown", (e) => {
     if (e.target.closest("button")) return;         // 标题栏上的返回 / 关闭按钮不算拖动
@@ -392,6 +399,12 @@ $("confirm-ok").onclick = async () => {
 /** 统一的导入入口（按钮和拖拽都走这里）。 */
 async function importEpubFile(file) {
   if (!file) return;
+  // 安卓文件选择器有时返回不带扩展名的显示名（content:// 的 ID），
+  // 补上 .epub 后缀再交给后端，否则会被"只支持 .epub"挡回来。
+  if (IS_ANDROID && !/\.epub$/i.test(file.name || "")) {
+    const safe = (file.name || "book").replace(/[\\/:*?"<>|]/g, "_");
+    file = new File([file], `${safe}.epub`, { type: "application/epub+zip" });
+  }
   if (!file.name.toLowerCase().endsWith(".epub")) {
     toast("只支持 .epub 格式的电子书");
     return;
@@ -1291,6 +1304,8 @@ let chromeShowTimer = null;
 
 /** 直接设置顶部栏显示 / 隐藏（收起动画由 CSS 的 .chrome-hidden 负责）。 */
 function setChromeVisible(visible) {
+  // 安卓没有"鼠标移到顶部"这回事，顶栏一旦藏起来就再也回不来
+  if (IS_ANDROID && !visible) return;
   readerView.classList.toggle("chrome-hidden", !visible);
 }
 
@@ -1312,6 +1327,7 @@ function showChromeTemporarily(ms) {
 
 // 核心：鼠标贴到窗口最顶部 → 滑出顶部栏；鼠标在下面 → 收起，专心阅读
 document.addEventListener("mousemove", (e) => {
+  if (IS_ANDROID) return;
   lastMouseY = e.clientY;
   if (!state.book) return;
   if (e.clientY <= CHROME_ZONE) {
@@ -1439,6 +1455,9 @@ document.addEventListener("mousedown", (e) => {
 
 /** 鼠标松开时判断是否有“新选中”的文字。 */
 document.addEventListener("mouseup", (e) => {
+  // 安卓走 mobile.js 的 selectionchange：触屏合成的 mouseup 会被下面
+  // "原地点击且选区没变"的判断误杀，导致划词工具栏一出现就被关掉。
+  if (IS_ANDROID) return;
   // 点在气泡、浮出操作栏、弹窗上时不处理
   // （用可选链：合成事件 / 拖到 document 上时 target 可能没有 closest）
   if (e.target.closest?.("#bubble") || e.target.closest?.("#sel-toolbar") ||
@@ -1487,6 +1506,17 @@ function isSelectionInsideContent(sel) {
  */
 function showSelToolbar(sel) {
   const rect = sel.getRangeAt(0).getBoundingClientRect();
+  // 安卓上点工具栏按钮时 WebView 可能已清掉选区，先把 Range / 位置存好，
+  // 让划线、词典、翻译不依赖"当前仍选中"。
+  if (IS_ANDROID && sel.rangeCount) {
+    lastSelection = {
+      text: sel.toString().trim(),
+      segIndex: segIndexFromSelection(sel),
+      context: contextFromSelection(sel),
+      rect,
+      range: sel.getRangeAt(0).cloneRange(),
+    };
+  }
   selToolbar.hidden = false;
   selToolbar.style.display = "flex"; // 内联样式显隐（不依赖 CSS，缓存过期也不会失效）
   const w = selToolbar.offsetWidth;
@@ -1506,6 +1536,9 @@ let selToolbarTimer = null;
 
 function scheduleSelToolbarHide() {
   clearTimeout(selToolbarTimer);
+  // 触屏没有 mousemove 来续命，4 秒后自动消失会让人来不及点；
+  // 安卓改为"点别处才收起"（mobile.js 的 touchstart 负责）。
+  if (IS_ANDROID) return;
   selToolbarTimer = setTimeout(hideSelToolbar, 4000);
 }
 
@@ -1563,19 +1596,36 @@ selToolbar.addEventListener("click", async (e) => {
   if (!state.book) return;
 
   const sel = window.getSelection();
-  const text = sel ? sel.toString().trim() : "";
+  let text = sel ? sel.toString().trim() : "";
+  if (!text && IS_ANDROID) text = lastSelection.text || "";
   if (!text) return hideSelToolbar();
 
-  lastSelection = {
-    text,
-    segIndex: segIndexFromSelection(sel),
-    context: contextFromSelection(sel),
-  };
-  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  if (text && sel && sel.rangeCount) {
+    lastSelection = {
+      text,
+      segIndex: segIndexFromSelection(sel),
+      context: contextFromSelection(sel),
+      rect: sel.getRangeAt(0).getBoundingClientRect(),
+    };
+  }
+  const rect = (sel && sel.rangeCount)
+    ? sel.getRangeAt(0).getBoundingClientRect()
+    : (lastSelection.rect || { left: 8, top: 8, right: 8, bottom: 8, width: 0, height: 0 });
 
   try {
     if (action === "copy") {
-      await navigator.clipboard.writeText(text);
+      // WebView 里 navigator.clipboard 可能不可用，退回老接口
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
       toast("已复制原文");
     } else if (action === "highlight") {
       await highlightSelection();
@@ -1763,6 +1813,7 @@ function hideBubble() {
 let bubbleDrag = null;
 
 bubble.addEventListener("mousedown", (e) => {
+  if (IS_ANDROID) return;
   if (e.target.closest("button")) return; // 点在按钮上不触发拖动
   const r = bubble.getBoundingClientRect();
   bubbleDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
@@ -2216,6 +2267,7 @@ function showChapterNote(anchorEl, anchorRect) {
 
 // 注释气泡标题栏：按住拖动（只在气泡已显示时生效）
 noteBubble.addEventListener("mousedown", (e) => {
+  if (IS_ANDROID) return;
   if (noteBubble.hidden) return;
   const head = e.target.closest(".note-bubble-head");
   if (!head || e.target.closest("button")) return; // 点关闭按钮不算拖动
@@ -2272,13 +2324,16 @@ function textOffsetIn(span, node, offset) {
  */
 async function highlightSelection() {
   const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
+  // 安卓：点工具栏时选区可能已被清掉，用 showSelToolbar 存下的 Range 兜底
+  const range = (sel && sel.rangeCount)
+    ? sel.getRangeAt(0)
+    : (IS_ANDROID ? lastSelection.range : null);
+  if (!range) return;
   if (state.langMode === "zh") {
     toast("中文模式下无法精确定位划线，请先切回「原文」或「对照」");
     return;
   }
 
-  const range = sel.getRangeAt(0);
   const spans = Array.from(readerContent.querySelectorAll("span.seg"))
     .filter((span) => range.intersectsNode(span));
 

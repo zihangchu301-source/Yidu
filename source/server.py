@@ -96,7 +96,7 @@ def _asset_version(app: Flask) -> str:
     从而根治“改了前端却因为缓存看到旧界面、必须手动强刷”的老毛病。
     """
     stamp = 0
-    for name in ("style.css", "app.js"):
+    for name in ("style.css", "app.js", "mobile.css", "mobile.js"):
         try:
             stamp = max(stamp, int(os.path.getmtime(os.path.join(app.static_folder, name))))
         except OSError:
@@ -132,6 +132,7 @@ def create_app(cfg, static_folder: str | None = None,
         resp = make_response(render_template("index.html",
                                              default_font_size=cfg.default_font_size,
                                              default_theme=cfg.default_theme,
+                                             android=request.args.get("android") == "1",
                                              asset_version=_asset_version(app)))
         # 页面骨架（HTML）不缓存：改了 index.html 并重启服务后，
         # 浏览器一定能拿到新页面，不会出现“新 JS 配旧 HTML”导致的空白/报错。
