@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private static final int REQ_FILE = 1001;
     private static final String PREFS = "yidu_update";
     private static final String KEY_DOWNLOAD_ID = "download_id";
+    private static final String KEY_PENDING_VERSION = "pending_version";
 
     private WebView webView;
     /** 包住 WebView 的根容器：颜色跟页面主题一致，任何缝隙都只会露出页面色，不会露黑。 */
@@ -94,7 +95,9 @@ public class MainActivity extends Activity {
         // 再用系统里真实的已安装版本覆盖一次：这是最权威的"当前版本"，
         // 从老版本升级上来（assets 里没有 version.json）也不会再误报有更新。
         syncInstalledVersion(versionTarget);
-        resumePendingUpdate();
+        // 先把以前攒下的历史安装包清掉（跳过"下载完还没装"的那一份）。
+        // 补装（下载完没装完就退出）统一交给 onResume，那里也负责"刚授权回来"的情况。
+        purgeOldUpdateApks();
 
         try {
             if (!Python.isStarted()) {
@@ -309,6 +312,16 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 当前已安装的版本号（如 1.0.28）；读不到返回空串。 */
+    private String currentVersionName() {
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return pi.versionName == null ? "" : pi.versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     /** 启动时读一次配置里的主题，避免网页加载前窗口底色和页面不一致。 */
     private boolean readDarkTheme() {
         try (BufferedReader r = new BufferedReader(
@@ -342,6 +355,16 @@ public class MainActivity extends Activity {
                         WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                 ctl.hide(WindowInsets.Type.statusBars());
             }
+        }
+        // 【关键】允许内容画进挖孔/刘海所在的短边区域。
+        //   默认的 DEFAULT 模式下，有挖孔的屏幕即使隐藏了状态栏，系统也会把
+        //   「状态栏 + 挖孔安全区」整条留黑（就是用户截图里那条很宽的黑色带），
+        //   微信读书之所以只有一个摄像头黑点，就是因为它设了 SHORT_EDGES。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams lp = w.getAttributes();
+            lp.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            w.setAttributes(lp);
         }
         // 部分国产 ROM 不认上面的新接口，只认老的标志位（游戏全屏就是这套）。
         // 两套一起下，谁生效都行；重复设置没有副作用。
@@ -421,15 +444,9 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "更新地址为空，请稍后重试", Toast.LENGTH_LONG).show();
             return;
         }
-        if (!canInstallUnknown()) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (Exception ignored) { }
-            Toast.makeText(this, "请允许「安装未知应用」后再点一次下载", Toast.LENGTH_LONG).show();
-            return;
-        }
+        // 注意：这里**不再**检查"安装未知应用"权限。
+        // 以前在下载前就拦，用户被拉去设置授权、回来还得再点一次下载 —— 就是"要装两次"的来源。
+        // 现在照常下载，等下载完真正要装的时候再要权限，授权回来自动继续（见 onResume）。
         try {
             // 版本号既用于 URL 防缓存，也用于本地文件名，避免复用上次下载的旧包
             String ver = (version == null || version.isEmpty())
@@ -448,9 +465,12 @@ public class MainActivity extends Activity {
             req.setAllowedOverMetered(true);
             req.setAllowedOverRoaming(true);
             updateDownloadId = downloadManager.enqueue(req);
-            // 记下 id：用户下载途中退出 App，下次启动仍会补弹安装
+            // 记下 id + 这一版版本号：用户下载途中退出 App，下次启动仍会补弹安装；
+            // 版本号用来在安装前判断"下到的和已装的是不是同一版"（避免装两次）。
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                    .putLong(KEY_DOWNLOAD_ID, updateDownloadId).apply();
+                    .putLong(KEY_DOWNLOAD_ID, updateDownloadId)
+                    .putString(KEY_PENDING_VERSION, ver)
+                    .apply();
             registerDownloadReceiver();
             Toast.makeText(this, "开始下载 " + ver + "，完成后自动弹出安装", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
@@ -498,25 +518,62 @@ public class MainActivity extends Activity {
     }
 
     /** 下载途中退出了 App：下次启动补弹安装界面，不让用户以为更新没生效。 */
-    private void resumePendingUpdate() {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        long id = prefs.getLong(KEY_DOWNLOAD_ID, -1L);
-        if (id < 0) return;
-        prefs.edit().remove(KEY_DOWNLOAD_ID).apply();
-        if (isDownloadSuccessful(id)) installDownloaded(id);
+    /**
+     * 每次回到前台都检查一次：上次下载完却没装成（退出 App / 刚去系统设置
+     * 授权了「安装未知应用」），回来就自动接着装，用户不用再点第二次。
+     * 记录只在对的地方清（installDownloaded 里），避免同一个包被拉起两次安装器。
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!canInstallUnknown()) return;
+        long id = getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_DOWNLOAD_ID, -1L);
+        if (id >= 0 && isDownloadSuccessful(id)) installDownloaded(id);
     }
 
     private void installDownloaded(long id) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_DOWNLOAD_ID).apply();
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String pending = prefs.getString(KEY_PENDING_VERSION, "");
+
+        // ① 还没给「安装未知应用」权限：拉用户去授权，**保留**记录，
+        //    授权返回后 onResume 自动接着装 —— 全程只点一次「下载」。
+        if (!canInstallUnknown()) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception ignored) {
+            }
+            Toast.makeText(this, "请允许「安装未知应用」，返回后会自动继续安装",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (downloadManager == null) {
+            downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+        }
+        // ② 下载还没完成（例如刚授权回来）：保留记录，等下载完成广播再装
+        if (downloadManager == null || !isDownloadSuccessful(id)) {
+            Toast.makeText(this, "下载未完成，请稍后…", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // ③ 下到的版本和当前已装版本相同：不要再拉起安装器。
+        //    否则安装器会弹「已安装相同版本 → 可直接打开 / 重新安装」，
+        //    用户只能点「重新安装」才装得进去，体验上就是"每次都要装两次"。
+        if (!pending.isEmpty() && pending.equals(currentVersionName())) {
+            try {
+                downloadManager.remove(id);
+            } catch (Exception ignored) {
+            }
+            prefs.edit().remove(KEY_DOWNLOAD_ID).remove(KEY_PENDING_VERSION).apply();
+            Toast.makeText(this, "已是最新版本，无需重复安装", Toast.LENGTH_SHORT).show();
+            purgeOldUpdateApks();
+            return;
+        }
+
+        prefs.edit().remove(KEY_DOWNLOAD_ID).remove(KEY_PENDING_VERSION).apply();
         try {
-            if (downloadManager == null) {
-                downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-            }
-            // 失败/未完成的下载不要弹出安装器，否则会出现"装了还是旧版"
-            if (!isDownloadSuccessful(id)) {
-                Toast.makeText(this, "下载未完成，请检查网络后重试", Toast.LENGTH_LONG).show();
-                return;
-            }
             Uri uri = downloadManager.getUriForDownloadedFile(id);
             if (uri == null) {
                 Toast.makeText(this, "下载文件不可用，请检查网络后重试", Toast.LENGTH_LONG).show();
@@ -571,6 +628,9 @@ public class MainActivity extends Activity {
         try {
             DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             if (dm == null) return;
+            // 待安装的那一份不能删（用户下载完还没点安装 / 刚重启 App 等补弹）
+            long pendingId = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getLong(KEY_DOWNLOAD_ID, -1L);
             Cursor c = dm.query(new DownloadManager.Query());
             if (c == null) return;
             try {
@@ -580,6 +640,8 @@ public class MainActivity extends Activity {
                 int statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
                 if (idCol < 0) return;
                 while (c.moveToNext()) {
+                    long id = c.getLong(idCol);
+                    if (id == pendingId) continue;
                     String title = titleCol >= 0 ? c.getString(titleCol) : null;
                     String localUri = uriCol >= 0 ? c.getString(uriCol) : null;
                     int status = statusCol >= 0 ? c.getInt(statusCol) : 0;
@@ -588,7 +650,7 @@ public class MainActivity extends Activity {
                     // 只清已完成 / 失败的历史包，正在下载的不动
                     boolean settled = status == DownloadManager.STATUS_SUCCESSFUL
                             || status == DownloadManager.STATUS_FAILED;
-                    if (mine && settled) dm.remove(c.getLong(idCol));
+                    if (mine && settled) dm.remove(id);
                 }
             } finally {
                 c.close();

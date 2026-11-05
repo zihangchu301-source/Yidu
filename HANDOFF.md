@@ -41,6 +41,12 @@ Yidu-repo/
 
 注意：`source/static/` 是桌面版旧副本，**安卓构建不读它**。改前端改根目录 `static/`。
 
+桌面版（`D:\EPUBReader`）改 CSS 有个坑：`source/app.py::_ensure_static_in_base()` 在 exe 启动时会拿打包内的 `style.css` 覆盖 exe 旁的 `static\style.css`（内容不一致就 `copy2`）。所以改桌面样式必须同时：
+
+- 改运行目录 `D:\EPUBReader\static\style.css`，并同步 `D:\EPUBReader\source\static\style.css`（源码模式启动、将来 PyInstaller 重打包都读它）；
+- 运行目录那份已设**只读**：老 exe 启动时覆盖会抛 `PermissionError` 被忽略，新样式才不会被打回原样；
+- 要用新打包的 exe 重新同步样式时，先去掉只读（文件属性，或 `attrib -R "D:\EPUBReader\static\style.css"`）。
+
 ## 3. 架构一句话
 
 - **桌面**：Python Flask + pywebview，书/进度/划线存在电脑本地
