@@ -122,15 +122,21 @@
       updateDetail.textContent =
         `当前：${data.local_version || data.local_built_at}\n最新：${data.version || data.remote_built_at}\n${size}下载完成后会自动弹出安装`;
       updateDownload.hidden = false;
+      updateDownload.disabled = false;
       updateDownload.onclick = () => {
-        if (window.YiduNative && window.YiduNative.downloadUpdate) {
-          window.YiduNative.downloadUpdate(data.url, data.version || "");
-          updateModal.hidden = true;
-          toast("正在下载更新，完成后会弹出安装");
-        } else {
-          window.open(data.url, "_blank");
+        if (!data.url) { toast("更新地址异常，请稍后再试"); return; }
+        if (!window.YiduNative || !window.YiduNative.downloadUpdate) {
+          toast("无法自动安装，请用浏览器打开下面的链接");
+          updateDetail.textContent += "\n" + data.url;
+          return;
         }
+        // 防重复点击，避免连着下载好几份
+        updateDownload.disabled = true;
+        window.YiduNative.downloadUpdate(data.url, data.version || "");
+        updateModal.hidden = true;
+        toast("正在下载 " + (data.version || "新版本") + "，完成后自动弹出安装");
         setReaderChrome(false);
+        setTimeout(() => { updateDownload.disabled = false; }, 3000);
       };
     } catch (err) {
       updateTitle.textContent = "检查失败";

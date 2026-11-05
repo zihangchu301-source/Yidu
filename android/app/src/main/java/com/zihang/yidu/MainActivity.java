@@ -6,7 +6,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -36,6 +38,8 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "Yidu";
     private static final int REQ_FILE = 1001;
+    private static final String PREFS = "yidu_update";
+    private static final String KEY_DOWNLOAD_ID = "download_id";
 
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileCallback;
@@ -58,11 +62,15 @@ public class MainActivity extends Activity {
             showFatal("解压界面资源失败", e);
             return;
         }
-        // 版本文件由 Gradle 构建时生成（缺失时只影响"检查更新"，不阻断启动）
+        // 版本文件由 Gradle 构建时生成。新包若缺这个文件，删掉上次的旧文件，
+        // 否则"检查更新"会拿着旧版本号一直提示有新版本。
+        File versionTarget = new File(home, "version.json");
         try {
-            copyAssetFile("version.json", new File(home, "version.json"));
+            copyAssetFile("version.json", versionTarget);
         } catch (IOException ignored) {
+            try { versionTarget.delete(); } catch (Exception ignored2) { }
         }
+        resumePendingUpdate();
 
         try {
             if (!Python.isStarted()) {
@@ -228,6 +236,10 @@ public class MainActivity extends Activity {
     }
 
     private void startUpdateDownload(String url, String version) {
+        if (url == null || url.isEmpty()) {
+            Toast.makeText(this, "更新地址为空，请稍后重试", Toast.LENGTH_LONG).show();
+            return;
+        }
         if (!canInstallUnknown()) {
             try {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -255,6 +267,9 @@ public class MainActivity extends Activity {
             req.setAllowedOverMetered(true);
             req.setAllowedOverRoaming(true);
             updateDownloadId = downloadManager.enqueue(req);
+            // 记下 id：用户下载途中退出 App，下次启动仍会补弹安装
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putLong(KEY_DOWNLOAD_ID, updateDownloadId).apply();
             registerDownloadReceiver();
             Toast.makeText(this, "开始下载 " + ver + "，完成后自动弹出安装", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
@@ -280,18 +295,66 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void installDownloaded(long id) {
+    private boolean isDownloadSuccessful(long id) {
         try {
+            if (downloadManager == null) {
+                downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            }
+            if (downloadManager == null) return false;
+            Cursor c = downloadManager.query(new DownloadManager.Query().setFilterById(id));
+            if (c == null) return false;
+            try {
+                return c.moveToFirst()
+                        && c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                        == DownloadManager.STATUS_SUCCESSFUL;
+            } finally {
+                c.close();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "查询下载状态失败", e);
+            return false;
+        }
+    }
+
+    /** 下载途中退出了 App：下次启动补弹安装界面，不让用户以为更新没生效。 */
+    private void resumePendingUpdate() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        long id = prefs.getLong(KEY_DOWNLOAD_ID, -1L);
+        if (id < 0) return;
+        prefs.edit().remove(KEY_DOWNLOAD_ID).apply();
+        if (isDownloadSuccessful(id)) installDownloaded(id);
+    }
+
+    private void installDownloaded(long id) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_DOWNLOAD_ID).apply();
+        try {
+            if (downloadManager == null) {
+                downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            }
+            // 失败/未完成的下载不要弹出安装器，否则会出现"装了还是旧版"
+            if (!isDownloadSuccessful(id)) {
+                Toast.makeText(this, "下载未完成，请检查网络后重试", Toast.LENGTH_LONG).show();
+                return;
+            }
             Uri uri = downloadManager.getUriForDownloadedFile(id);
             if (uri == null) {
-                Toast.makeText(this, "下载未完成，请检查网络", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "下载文件不可用，请检查网络后重试", Toast.LENGTH_LONG).show();
                 return;
             }
             Intent install = new Intent(Intent.ACTION_VIEW);
             install.setDataAndType(uri, "application/vnd.android.package-archive");
             install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(install);
+            try {
+                startActivity(install);
+            } catch (Exception e1) {
+                // 部分国产 ROM 只认这个 action
+                Intent fallback = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+                fallback.setDataAndType(uri, "application/vnd.android.package-archive");
+                fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(fallback);
+            }
         } catch (Exception e) {
             Log.e(TAG, "唤起安装失败", e);
             Toast.makeText(this, "无法打开安装界面，请到「下载」目录手动安装", Toast.LENGTH_LONG).show();

@@ -244,3 +244,4 @@ html.is-android .toast { bottom: 108px; }
 /* 检查更新弹窗：版本信息里的换行要显示出来 */
 html.is-android #update-detail { white-space: pre-line; line-height: 1.8; }
 html.is-android #update-download { min-height: 42px; }
+html.is-android #update-download:disabled { opacity: 0.55; }

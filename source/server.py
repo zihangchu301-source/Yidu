@@ -678,25 +678,41 @@ def create_app(cfg, static_folder: str | None = None,
         except (OSError, ValueError):
             local = {}
 
-        try:
-            req = urllib.request.Request(
-                f"{version_url}?t={int(time.time())}",
-                headers={"User-Agent": "YiduReader/1.0", "Cache-Control": "no-cache"},
-            )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                remote = json.loads(resp.read().decode("utf-8", "replace"))
-        except Exception as exc:
+        # 国内网络偶尔抖动：多给点时间并重试一次，别动不动就"检查失败"
+        remote = None
+        last_err = None
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(
+                    f"{version_url}?t={int(time.time())}{attempt}",
+                    headers={"User-Agent": "YiduReader/1.0",
+                             "Cache-Control": "no-cache", "Pragma": "no-cache"},
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    remote = json.loads(resp.read().decode("utf-8", "replace"))
+                break
+            except Exception as exc:
+                last_err = exc
+        if not isinstance(remote, dict) or not remote.get("built_at"):
             return jsonify({
                 "has_update": False,
-                "error": f"无法连接更新服务器：{exc.__class__.__name__}",
+                "error": f"无法连接更新服务器：{last_err.__class__.__name__ if last_err else '返回内容异常'}",
             })
 
         local_at = local.get("built_at", "")
         remote_at = remote.get("built_at", "")
+        # 优先用递增的版本号判断（不受设备时间影响）；老格式才退回时间比较
+        local_code = int(local.get("version_code") or 0)
+        remote_code = int(remote.get("version_code") or 0)
+        if remote_code > 0 and local_code > 0:
+            has_update = remote_code > local_code
+        else:
+            has_update = bool(remote_at and remote_at > local_at)
+
         # 优先用每版独立的 yidu-<版本>.apk，固定文件名容易被 CDN 缓存成旧包
         download_url = remote.get("apk") or f"{apk_url}?v={remote_at or int(time.time())}"
         return jsonify({
-            "has_update": bool(remote_at and remote_at > local_at),
+            "has_update": has_update,
             "local_built_at": local_at or "未知",
             "remote_built_at": remote_at or "未知",
             "local_version": local.get("version_name", "") or "未知",

@@ -11,6 +11,11 @@ on:
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
 
+# 两次 push 连着来时排队发布，避免两个构建同时改同一个 Release 造成文件错乱
+concurrency:
+  group: apk-release
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -136,17 +141,27 @@ jobs:
           VER=$(python3 -c "import json;print(json.load(open('android/app/src/main/assets/version.json'))['version_name'])")
           cp "$APKDIR/yidu-1.0-debug.apk" "$APKDIR/yidu-${VER}.apk"
 
-          # 每版一个独立文件名：固定链接容易被 CDN 缓存成旧包，
-          # 应用内更新走这个唯一 URL。旧的版本包清掉，只留当前这一版。
-          for old in $(gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^yidu-1\.0\.[0-9]+\.apk$' || true); do
-            if [ "$old" != "yidu-${VER}.apk" ]; then
-              gh release delete-asset "$TAG" "$old" -y || true
-            fi
-          done
+          # 先传 APK，最后单独传 version.json：
+          # 保证版本文件指向的 yidu-<版本>.apk 已经存在，不会出现"提示更新但下载 404"
           gh release upload "$TAG" \
             "$APKDIR/yidu-1.0-debug.apk" \
-            "$APKDIR/yidu-${VER}.apk" \
-            android/app/src/main/assets/version.json --clobber
+            "$APKDIR/yidu-${VER}.apk" --clobber
+          gh release upload "$TAG" android/app/src/main/assets/version.json --clobber
+
+          # 保留最近 3 个版本包：万一某处拿到稍旧的 version.json，
+          # 它指向的 APK 还在，不会 404；同时不让 Release 无限膨胀。
+          mapfile -t stale < <(gh release view "$TAG" --json assets --jq '.assets[].name' \
+            | grep -E '^yidu-1\.0\.[0-9]+\.apk$' | sort -V | head -n -3 || true)
+          for old in "${stale[@]}"; do
+            gh release delete-asset "$TAG" "$old" -y || true
+          done
+
+          # 发布结果自检：文件没齐就让构建失败，别等用户在手机上撞见
+          gh release view "$TAG" --json assets --jq '.assets[].name' > /tmp/assets.txt
+          for need in "yidu-1.0-debug.apk" "yidu-${VER}.apk" "version.json"; do
+            grep -qx "$need" /tmp/assets.txt || { echo "ERROR: 发布缺少 $need"; exit 1; }
+          done
+          cat /tmp/assets.txt
           gh release edit "$TAG" --notes "最新版本 ${VER}（$(date -u +%Y-%m-%dT%H:%MZ)）。手机内点「检查更新」可直接覆盖安装，不会丢数据。"
           echo "固定下载：https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/yidu-1.0-debug.apk"
           echo "本版唯一链接：https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/yidu-${VER}.apk"

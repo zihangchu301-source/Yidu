@@ -48,11 +48,11 @@ tasks.matching {
 syncPython.get().copy()
 
 // 构建时生成版本文件：同一份内容既打进 APK（供"当前版本"读取），
-// 也由 CI 上传到 Release（供"最新版本"比对）。built_at 相同即表示已是最新。
+// 也由 CI 上传到 Release（供"最新版本"比对）。version_code 递增即表示有新版。
 def versionAsset = file("${projectDir}/src/main/assets/version.json")
 versionAsset.parentFile.mkdirs()
 def builtAt = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone("UTC"))
-def runNo = System.getenv("GITHUB_RUN_NUMBER") ?: "0"
+def runNo = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 def versionNameStr = "1.0." + runNo
 // 每版一个独立文件名：固定链接 yidu-1.0-debug.apk 容易被 CDN / 浏览器缓存成旧包，
 // 应用内更新改用 yidu-<版本>.apk，URL 每次都不一样，绝不会下到旧版本。
@@ -80,8 +80,8 @@ android {
         applicationId "com.zihang.yidu"
         minSdk 24
         targetSdk 34
-        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger())
-        versionName("1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0"))
+        versionCode(runNo.toInteger())
+        versionName(versionNameStr)
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
