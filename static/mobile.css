@@ -69,7 +69,9 @@ html.is-android .book-del {
   font-size: 15px;
 }
 
-/* ---------- 二、安卓：工具栏移到底部，平时隐藏，点把手才出现 ---------- */
+/* ---------- 二、安卓：书架底栏常驻，阅读页底栏点击才出现 ---------- */
+html.is-android { --dock-h: 58px; }
+
 html.is-android .shelf-header,
 html.is-android .reader-header {
   position: fixed;
@@ -84,17 +86,53 @@ html.is-android .reader-header {
   box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.14);
   max-height: none;
   overflow: visible;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+/* 主界面：一直固定显示，不需要任何唤出操作。
+   压成一行：标题/统计不占底部，五个入口等宽，接近手机底部导航。 */
+html.is-android .shelf-header {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  padding: 6px 8px 8px;
+  gap: 0;
+  flex-wrap: nowrap;
+}
+html.is-android .shelf-heading { display: none; }
+html.is-android .shelf-tools {
+  width: 100%;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 4px;
+}
+html.is-android .shelf-tools > * { flex: 1 1 0; min-width: 0; }
+html.is-android .shelf-tools .btn-text,
+html.is-android #btn-import {
+  padding: 10px 2px;
+  min-height: 44px;
+  font-size: 12px;
+  justify-content: center;
+}
+html.is-android .btn-import-plus { display: none; }
+
+
+/* 阅读界面：默认全部隐藏，只有正文；点一下屏幕才浮出 */
+html.is-android .reader-header {
+  padding: 5px 6px;
+  gap: 4px;
+  height: auto;
+  min-height: 50px;
   transform: translateY(115%);
   opacity: 0;
   pointer-events: none;
-  transition: transform 0.22s ease, opacity 0.22s ease;
 }
-html.is-android body.dock-open .shelf-header,
-html.is-android body.dock-open .reader-header {
+html.is-android body.reader-chrome-open .reader-header {
   transform: translateY(0);
   opacity: 1;
   pointer-events: auto;
 }
+
 /* chrome-hidden 是桌面"鼠标移开就收起"的遗留类，别覆盖上面的隐藏状态 */
 html.is-android .view.chrome-hidden .reader-header {
   max-height: none;
@@ -102,42 +140,19 @@ html.is-android .view.chrome-hidden .reader-header {
   padding-bottom: 5px;
   border-bottom-color: transparent;
 }
-html.is-android .reader-header {
-  padding: 5px 6px;
-  gap: 4px;
-  height: auto;
-  min-height: 50px;
-}
-html.is-android .shelf-header { padding: 10px 12px 14px; }
-/* 翻译进度条贴着底栏上方 */
+
+/* 翻译进度条：阅读栏收起时贴底，浮出时让位 */
 html.is-android .translate-bar {
   top: auto;
   bottom: 0;
   border-top: 1px solid var(--border);
   border-bottom: none;
 }
-html.is-android body.dock-open .translate-bar { bottom: var(--reader-chrome-h); }
-/* 顶部不再有工具栏，正文不用预留顶部高度，底部留够给把手/底栏 */
-html.is-android .reader-content { padding: 16px 0 96px; }
+html.is-android body.reader-chrome-open .translate-bar { bottom: var(--dock-h); }
 
-/* 唤出把手：只露一条小横杠 */
-html.is-android .dock-handle {
-  display: block;
-  position: fixed;
-  left: 50%;
-  bottom: 7px;
-  transform: translateX(-50%);
-  width: 60px;
-  height: 6px;
-  min-height: 6px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: rgba(128, 128, 128, 0.45);
-  z-index: 90;
-  transition: opacity 0.2s ease;
-}
-html.is-android body.dock-open .dock-handle { opacity: 0; pointer-events: none; }
+/* 顶部没有工具栏；底部给常驻栏留够空间，滚到底不压字 */
+html.is-android .reader-content { padding: 16px 0 96px; }
+html.is-android .book-grid { padding-bottom: 88px; }
 html.is-android .reader-title { font-size: 13px; }
 html.is-android #btn-back { padding: 10px 8px; font-size: 13px; }
 html.is-android .reader-actions { gap: 1px; }
@@ -216,15 +231,14 @@ html.is-android .nd-item-ops { opacity: 1; width: 100%; justify-content: flex-en
 html.is-android .nd-item-ops button { padding: 9px 12px; font-size: 13px; }
 
 /* ---------- 五、其它小按钮 ---------- */
-/* 底部已被把手 / 底栏占用，返回词典改到左上角 */
+/* 书架底栏常驻，Toast / 返回按钮别被压住 */
 html.is-android .back-panel {
   left: 12px;
   top: 12px;
   bottom: auto;
   padding: 12px 18px;
 }
-html.is-android .toast { bottom: 26px; }
-html.is-android body.dock-open .toast { bottom: 82px; }
+html.is-android .toast { bottom: 92px; }
 /* 检查更新弹窗：版本信息里的换行要显示出来 */
 html.is-android #update-detail { white-space: pre-line; line-height: 1.8; }
 html.is-android #update-download { min-height: 42px; }

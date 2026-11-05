@@ -3,44 +3,82 @@
    --------------------------------------------------------------------------
    app.js 是鼠标时代写的：顶栏靠 mousemove 收起、划词靠 mouseup、
    点外部关闭靠 mousedown。这里补上触摸侧的等价逻辑，并负责：
-     * 底部隐藏式工具栏的唤出 / 收起
+     * 书架底栏常驻；阅读页默认纯净，点一下正文才浮出/收起底部工具栏
      * 应用内检查更新与下载安装
    ========================================================================== */
 (function () {
   if (!document.documentElement.classList.contains("is-android")) return;
 
   const body = document.body;
-  const handle = document.getElementById("dock-handle");
 
-  /* ---- 0. 只在安卓显示的入口 ------------------------------------------- */
+  /* ---- 0. 只在安卓显示的入口 + 缩短底栏文字 ---------------------------- */
   ["btn-shelf-update", "btn-check-update"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = false;
   });
-  if (handle) handle.hidden = false;
+  const shelfUpdate = document.getElementById("btn-shelf-update");
+  if (shelfUpdate) shelfUpdate.textContent = "更新";
+  const importText = document.getElementById("btn-import-text");
+  if (importText) importText.textContent = "导入";
 
-  /* ---- 1. 底部工具栏：点把手展开，点别处收起 ---------------------------- */
-  function setDock(open) {
-    body.classList.toggle("dock-open", open);
+  /* ---- 1. 阅读页工具栏：点一下正文切换显隐 ------------------------------
+     书架底栏由 CSS 常驻，这里只管阅读页。 */
+  function setReaderChrome(open) {
+    body.classList.toggle("reader-chrome-open", open);
     if (!open) setMoreMenu(false);
   }
-  if (handle) {
-    handle.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setDock(!body.classList.contains("dock-open"));
-    });
-  }
-  // 菜单里选完一项，顺手把底栏收回去，不挡正文
-  moreDropdown.addEventListener("click", () => setDock(false));
-  // 打开书 / 返回书架时也收起
+
+  // 菜单里选完一项就收起，别挡正文
+  moreDropdown.addEventListener("click", () => setReaderChrome(false));
+  // 返回书架 / 导入 / 打开书时都回到"纯净阅读"状态
   ["btn-back", "btn-import"].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener("click", () => setDock(false));
+    if (el) el.addEventListener("click", () => setReaderChrome(false));
+  });
+  bookGrid.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".cover-wrap")) setReaderChrome(false);
   });
 
-  /* ---- 2. 长按选词 → 浮出操作栏 ----------------------------------------
-     触屏没有可靠的 mouseup 选区判断（app.js 已在该分支跳过），
-     改用 selectionchange + 220ms 防抖。 */
+  let tapStart = null;
+  document.addEventListener("touchstart", (e) => {
+    const t = e.target;
+    const p = e.touches && e.touches[0];
+    tapStart = p ? { x: p.clientX, y: p.clientY, time: Date.now(), target: t } : null;
+
+    const inside = (selector) => !!(t && t.closest && t.closest(selector));
+    if (!inside("#bubble")) hideBubble();
+    if (!inside("#sel-toolbar")) hideSelToolbar();
+    if (!inside("#note-bubble")) hideNoteBubble();
+    if (!moreDropdown.hidden && !inside("#more-dropdown") && !inside("#btn-more")) {
+      setMoreMenu(false);
+    }
+    const floating = t && t.closest ? t.closest(".modal.panel-float") : null;
+    if (floating && !inside(".notes-box") && !inside(".modal-box")) {
+      floating.hidden = true;
+    }
+  }, { passive: true });
+
+  // 短按（不是滚动、不是长按选词）才切换工具栏；点在浮层/按钮上不切换
+  document.addEventListener("touchend", (e) => {
+    const start = tapStart;
+    tapStart = null;
+    if (!start || !e.changedTouches || !e.changedTouches[0]) return;
+    if (!readerView.classList.contains("active")) return;
+
+    const p = e.changedTouches[0];
+    if (Math.abs(p.clientX - start.x) > 12 || Math.abs(p.clientY - start.y) > 12) return;
+    if (Date.now() - start.time > 400) return;
+
+    const t = start.target;
+    const inside = (selector) => !!(t && t.closest && t.closest(selector));
+    if (inside(".reader-header") || inside(".modal") || inside("#more-dropdown") ||
+        inside("#sel-toolbar") || inside("#bubble") || inside("#note-bubble") ||
+        inside("#tts-bar") || inside(".back-panel")) return;
+
+    setReaderChrome(!body.classList.contains("reader-chrome-open"));
+  }, { passive: true });
+
+  /* ---- 2. 长按选词 → 浮出操作栏 ---------------------------------------- */
   let selTimer = null;
   document.addEventListener("selectionchange", () => {
     clearTimeout(selTimer);
@@ -54,36 +92,13 @@
     }, 220);
   });
 
-  /* ---- 3. 点别处收起浮层 / 底栏 ---------------------------------------- */
-  document.addEventListener("touchstart", (e) => {
-    const t = e.target;
-    const inside = (selector) => !!(t && t.closest && t.closest(selector));
-
-    if (!inside("#bubble")) hideBubble();
-    if (!inside("#sel-toolbar")) hideSelToolbar();
-    if (!inside("#note-bubble")) hideNoteBubble();
-    if (!moreDropdown.hidden && !inside("#more-dropdown") && !inside("#btn-more")) {
-      setMoreMenu(false);
-    }
-    const floating = t && t.closest ? t.closest(".modal.panel-float") : null;
-    if (floating && !inside(".notes-box") && !inside(".modal-box")) {
-      floating.hidden = true;
-    }
-    if (body.classList.contains("dock-open") &&
-        !inside(".shelf-header") && !inside(".reader-header") &&
-        !inside("#dock-handle") && !inside("#more-dropdown") &&
-        !inside(".modal")) {
-      setDock(false);
-    }
-  }, { passive: true });
-
-  /* ---- 4. 长按正文时压住系统自带的复制菜单 ------------------------------ */
+  /* ---- 3. 长按正文时压住系统自带的复制菜单 ------------------------------ */
   readerContent.addEventListener("contextmenu", (e) => {
     const sel = window.getSelection();
     if (sel && sel.toString().trim()) e.preventDefault();
   });
 
-  /* ---- 5. 检查更新 ------------------------------------------------------ */
+  /* ---- 4. 检查更新 ------------------------------------------------------ */
   const updateModal = document.getElementById("update-modal");
   const updateTitle = document.getElementById("update-title");
   const updateDetail = document.getElementById("update-detail");
@@ -115,7 +130,7 @@
         } else {
           window.open(data.url, "_blank");
         }
-        setDock(false);
+        setReaderChrome(false);
       };
     } catch (err) {
       updateTitle.textContent = "检查失败";
@@ -128,10 +143,10 @@
     if (el) el.addEventListener("click", checkUpdate);
   });
   document.querySelectorAll("[data-update-close]").forEach((el) => {
-    el.addEventListener("click", () => { updateModal.hidden = true; setDock(false); });
+    el.addEventListener("click", () => { updateModal.hidden = true; });
   });
 
-  /* ---- 6. 安卓返回键：优先关浮层 / 底栏，而不是直接退出 App ------------- */
+  /* ---- 5. 安卓返回键：优先关浮层 / 工具栏，而不是直接退出 App ----------- */
   window.__yiduBack = function () {
     if (!updateModal.hidden) { updateModal.hidden = true; return true; }
     const openModals = document.querySelectorAll(".modal:not([hidden])");
@@ -139,7 +154,7 @@
       openModals[openModals.length - 1].hidden = true;
       return true;
     }
-    if (body.classList.contains("dock-open")) { setDock(false); return true; }
+    if (body.classList.contains("reader-chrome-open")) { setReaderChrome(false); return true; }
     if (!moreDropdown.hidden) { setMoreMenu(false); return true; }
     if (!bubble.hidden) { hideBubble(); return true; }
     if (!noteBubble.hidden) { hideNoteBubble(); return true; }
@@ -151,9 +166,9 @@
     return false;
   };
 
-  /* ---- 7. 文案：手机上没有拖拽这回事 ------------------------------------ */
+  /* ---- 6. 文案 ---------------------------------------------------------- */
   const tip = document.querySelector(".shelf-empty-tip");
-  if (tip) tip.textContent = "点底部小横条展开工具栏，再点「导入 EPUB」";
+  if (tip) tip.textContent = "点底部「导入」，从手机里选择一本书";
   const dropText = document.querySelector("#drop-hint .drop-hint-box");
   if (dropText) dropText.textContent = "松开手指，导入这本 EPUB";
 })();
