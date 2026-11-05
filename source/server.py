@@ -653,6 +653,54 @@ def create_app(cfg, static_folder: str | None = None,
         store.delete_annotation(anno_id)
         return jsonify({"ok": True})
 
+    # ------------------------------------------------------------------
+    # 安卓版：应用内检查更新
+    # 构建时生成的 version.json 会同时打进 APK 和上传到 Release，
+    # 比对两个 built_at 就知道有没有新版本，避免依赖 GitHub API 限流。
+    # ------------------------------------------------------------------
+    @app.get("/api/app/update")
+    def check_app_update():
+        import time
+        import urllib.request
+
+        apk_url = ("https://github.com/zihangchu301-source/Yidu/releases/"
+                   "download/android-latest/yidu-1.0-debug.apk")
+        version_url = ("https://github.com/zihangchu301-source/Yidu/releases/"
+                       "download/android-latest/version.json")
+
+        home = os.environ.get("YIDU_HOME", "")
+        local_path = os.path.join(home, "version.json") if home else ""
+        local = {}
+        try:
+            if local_path and os.path.isfile(local_path):
+                with open(local_path, encoding="utf-8") as fh:
+                    local = json.load(fh)
+        except (OSError, ValueError):
+            local = {}
+
+        try:
+            req = urllib.request.Request(
+                f"{version_url}?t={int(time.time())}",
+                headers={"User-Agent": "YiduReader/1.0", "Cache-Control": "no-cache"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                remote = json.loads(resp.read().decode("utf-8", "replace"))
+        except Exception as exc:
+            return jsonify({
+                "has_update": False,
+                "error": f"无法连接更新服务器：{exc.__class__.__name__}",
+            })
+
+        local_at = local.get("built_at", "")
+        remote_at = remote.get("built_at", "")
+        return jsonify({
+            "has_update": bool(remote_at and remote_at > local_at),
+            "local_built_at": local_at or "未知",
+            "remote_built_at": remote_at or "未知",
+            "size_mb": remote.get("size_mb", 0),
+            "url": apk_url,
+        })
+
     return app
 
 

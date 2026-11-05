@@ -47,6 +47,24 @@ tasks.matching {
 // 配置阶段先同步一次：不管哪个 Chaquopy 任务先跑，源码都已就位（这几步只是拷十几个小文件）
 syncPython.get().copy()
 
+// 构建时生成版本文件：同一份内容既打进 APK（供"当前版本"读取），
+// 也由 CI 上传到 Release（供"最新版本"比对）。built_at 相同即表示已是最新。
+def versionAsset = file("${projectDir}/src/main/assets/version.json")
+versionAsset.parentFile.mkdirs()
+def builtAt = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone("UTC"))
+versionAsset.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
+        built_at: builtAt,
+        app     : "译读",
+])), "UTF-8")
+
+// 固定签名：CI 从 GitHub Secrets 注入同一个 keystore，
+// 每次构建签名一致 → 可直接覆盖安装，用户数据不丢。
+// 本地开发没有这些环境变量时回退到默认 debug 签名。
+def ksB64 = System.getenv("YIDU_KEYSTORE_BASE64")
+if (ksB64) {
+    file("${projectDir}/yidu-release.jks").bytes = java.util.Base64.getDecoder().decode(ksB64)
+}
+
 android {
     namespace "com.zihang.yidu"
     compileSdk 34
@@ -55,16 +73,30 @@ android {
         applicationId "com.zihang.yidu"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger())
+        versionName("1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0"))
         ndk {
-            // 只打真机常用的两种架构，APK 体积小一半
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
     }
 
+    if (ksB64) {
+        signingConfigs {
+            yidu {
+                storeFile file("${projectDir}/yidu-release.jks")
+                storePassword System.getenv("YIDU_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("YIDU_KEY_ALIAS")
+                keyPassword System.getenv("YIDU_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (ksB64) signingConfig signingConfigs.yidu
+        }
         release {
+            if (ksB64) signingConfig signingConfigs.yidu
             minifyEnabled false
         }
     }

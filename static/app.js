@@ -1347,8 +1347,15 @@ function setMoreMenu(open) {
   moreDropdown.hidden = !open;
   if (!open) return;
   const rect = $("btn-more").getBoundingClientRect();
-  moreDropdown.style.top = `${rect.bottom + 6}px`;
   moreDropdown.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`;
+  if (IS_ANDROID) {
+    // 工具栏在屏幕底部，菜单要往上弹，否则会掉出屏幕
+    moreDropdown.style.top = "auto";
+    moreDropdown.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 6)}px`;
+  } else {
+    moreDropdown.style.top = `${rect.bottom + 6}px`;
+    moreDropdown.style.bottom = "auto";
+  }
 }
 
 $("btn-more").onclick = (e) => {

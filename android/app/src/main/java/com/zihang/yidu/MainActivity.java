@@ -1,12 +1,20 @@
 package com.zihang.yidu;
 
 import android.app.Activity;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.res.AssetManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -31,6 +39,9 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileCallback;
     private int port = 8720;
+    private DownloadManager downloadManager;
+    private BroadcastReceiver downloadReceiver;
+    private long updateDownloadId = -1L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,6 +54,11 @@ public class MainActivity extends Activity {
         } catch (IOException e) {
             showFatal("解压界面资源失败", e);
             return;
+        }
+        // 版本文件由 Gradle 构建时生成（缺失时只影响"检查更新"，不阻断启动）
+        try {
+            copyAssetFile("version.json", new File(home, "version.json"));
+        } catch (IOException ignored) {
         }
 
         try {
@@ -74,6 +90,13 @@ public class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         webView.setWebViewClient(new android.webkit.WebViewClient());
+        // 给前端一个原生下载入口：window.YiduNative.downloadUpdate(url)
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void downloadUpdate(String url) {
+                runOnUiThread(() -> startUpdateDownload(url));
+            }
+        }, "YiduNative");
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView view,
@@ -127,6 +150,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (downloadReceiver != null) {
+            try { unregisterReceiver(downloadReceiver); } catch (Exception ignored) { }
+            downloadReceiver = null;
+        }
         if (webView != null) {
             webView.destroy();
             webView = null;
@@ -185,6 +212,79 @@ public class MainActivity extends Activity {
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
             }
+        }
+    }
+
+    /* ---- 应用内更新：下载 APK 并唤起系统安装器 -------------------------
+       用系统 DownloadManager 下到公共 Downloads（无需存储权限），
+       下载完成广播里拿 content:// URI 交给安装器。
+       签名由 CI 固定，所以可以直接覆盖安装，数据不会丢。 */
+    private boolean canInstallUnknown() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true;
+        return getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void startUpdateDownload(String url) {
+        if (!canInstallUnknown()) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception ignored) { }
+            Toast.makeText(this, "请允许「安装未知应用」后再点一次下载", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+            req.setTitle("译读 更新");
+            req.setDescription("正在下载新版本…");
+            req.setMimeType("application/vnd.android.package-archive");
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "yidu-update.apk");
+            req.setAllowedOverMetered(true);
+            req.setAllowedOverRoaming(true);
+            updateDownloadId = downloadManager.enqueue(req);
+            registerDownloadReceiver();
+            Toast.makeText(this, "开始下载更新，完成后自动弹出安装", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e(TAG, "下载更新失败", e);
+            Toast.makeText(this, "下载失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void registerDownloadReceiver() {
+        if (downloadReceiver != null) return;
+        downloadReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context ctx, Intent intent) {
+                long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
+                if (id == updateDownloadId) installDownloaded(id);
+            }
+        };
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(downloadReceiver, filter);
+        }
+    }
+
+    private void installDownloaded(long id) {
+        try {
+            Uri uri = downloadManager.getUriForDownloadedFile(id);
+            if (uri == null) {
+                Toast.makeText(this, "下载未完成，请检查网络", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Intent install = new Intent(Intent.ACTION_VIEW);
+            install.setDataAndType(uri, "application/vnd.android.package-archive");
+            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(install);
+        } catch (Exception e) {
+            Log.e(TAG, "唤起安装失败", e);
+            Toast.makeText(this, "无法打开安装界面，请到「下载」目录手动安装", Toast.LENGTH_LONG).show();
         }
     }
 

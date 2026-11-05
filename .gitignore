@@ -16,7 +16,9 @@ android/app/build/
 android/local.properties
 android/app/src/main/assets/static/
 android/app/src/main/assets/templates/
+android/app/src/main/assets/version.json
 android/app/src/main/python/
+android/app/yidu-release.jks
 android/captures/
 *.apk
 *.aab

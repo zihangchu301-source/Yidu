@@ -37,6 +37,12 @@ jobs:
           gradle-version: "8.5"
 
       - name: Build debug APK
+        env:
+          # 固定签名密钥（GitHub Secrets）：保证每次构建签名一致，可直接覆盖安装
+          YIDU_KEYSTORE_BASE64: ${{ secrets.YIDU_KEYSTORE_BASE64 }}
+          YIDU_KEYSTORE_PASSWORD: ${{ secrets.YIDU_KEYSTORE_PASSWORD }}
+          YIDU_KEY_ALIAS: ${{ secrets.YIDU_KEY_ALIAS }}
+          YIDU_KEY_PASSWORD: ${{ secrets.YIDU_KEY_PASSWORD }}
         run: |
           set -o pipefail
           gradle -p android assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log | tail -50
@@ -115,6 +121,8 @@ jobs:
             gh release create android-latest --prerelease \
               --title "安卓版（自动构建）" \
               --notes "每次推送自动覆盖更新的调试版 APK，直接下载安装即可。"
-          gh release edit android-latest --notes "最新构建已通过（$(date -u +%Y-%m-%dT%H:%MZ)）。下载 yidu-1.0-debug.apk 安装即可；首次启动在 App 内「设置」里填 API Key。"
-          gh release upload android-latest android/app/build/outputs/apk/debug/yidu-1.0-debug.apk --clobber
+          gh release edit android-latest --notes "最新构建：$(date -u +%Y-%m-%dT%H:%MZ)。手机内点「检查更新」可直接覆盖安装，不会丢数据。"
+          gh release upload android-latest \
+            android/app/build/outputs/apk/debug/yidu-1.0-debug.apk \
+            android/app/src/main/assets/version.json --clobber
           echo "下载地址：https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/yidu-1.0-debug.apk"
