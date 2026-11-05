@@ -693,12 +693,17 @@ def create_app(cfg, static_folder: str | None = None,
 
         local_at = local.get("built_at", "")
         remote_at = remote.get("built_at", "")
+        # 优先用每版独立的 yidu-<版本>.apk，固定文件名容易被 CDN 缓存成旧包
+        download_url = remote.get("apk") or f"{apk_url}?v={remote_at or int(time.time())}"
         return jsonify({
             "has_update": bool(remote_at and remote_at > local_at),
             "local_built_at": local_at or "未知",
             "remote_built_at": remote_at or "未知",
+            "local_version": local.get("version_name", "") or "未知",
+            "version": remote.get("version_name", "") or "未知",
             "size_mb": remote.get("size_mb", 0),
-            "url": apk_url,
+            "url": download_url,
+            "fixed_url": apk_url,
         })
 
     return app

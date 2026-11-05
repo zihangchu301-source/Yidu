@@ -126,12 +126,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view android-latest >/dev/null 2>&1 || \
-            gh release create android-latest --prerelease \
+          set -e
+          TAG=android-latest
+          APKDIR=android/app/build/outputs/apk/debug
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --prerelease \
               --title "安卓版（自动构建）" \
-              --notes "每次推送自动覆盖更新的调试版 APK，直接下载安装即可。"
-          gh release edit android-latest --notes "最新构建：$(date -u +%Y-%m-%dT%H:%MZ)。手机内点「检查更新」可直接覆盖安装，不会丢数据。"
-          gh release upload android-latest \
-            android/app/build/outputs/apk/debug/yidu-1.0-debug.apk \
+              --notes "每次推送自动发布新版本。"
+          VER=$(python3 -c "import json;print(json.load(open('android/app/src/main/assets/version.json'))['version_name'])")
+          cp "$APKDIR/yidu-1.0-debug.apk" "$APKDIR/yidu-${VER}.apk"
+
+          # 每版一个独立文件名：固定链接容易被 CDN 缓存成旧包，
+          # 应用内更新走这个唯一 URL。旧的版本包清掉，只留当前这一版。
+          for old in $(gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^yidu-1\.0\.[0-9]+\.apk$' || true); do
+            if [ "$old" != "yidu-${VER}.apk" ]; then
+              gh release delete-asset "$TAG" "$old" -y || true
+            fi
+          done
+          gh release upload "$TAG" \
+            "$APKDIR/yidu-1.0-debug.apk" \
+            "$APKDIR/yidu-${VER}.apk" \
             android/app/src/main/assets/version.json --clobber
-          echo "下载地址：https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest/yidu-1.0-debug.apk"
+          gh release edit "$TAG" --notes "最新版本 ${VER}（$(date -u +%Y-%m-%dT%H:%MZ)）。手机内点「检查更新」可直接覆盖安装，不会丢数据。"
+          echo "固定下载：https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/yidu-1.0-debug.apk"
+          echo "本版唯一链接：https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/yidu-${VER}.apk"
+

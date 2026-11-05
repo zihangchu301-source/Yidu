@@ -114,17 +114,17 @@
       if (data.error) throw new Error(data.error);
       if (!data.has_update) {
         updateTitle.textContent = "已是最新版本";
-        updateDetail.textContent = `当前构建：${data.local_built_at}`;
+        updateDetail.textContent = `当前版本：${data.local_version || data.local_built_at}`;
         return;
       }
       updateTitle.textContent = "发现新版本";
       const size = data.size_mb ? `约 ${data.size_mb} MB · ` : "";
       updateDetail.textContent =
-        `当前：${data.local_built_at}\n最新：${data.remote_built_at}\n${size}下载完成后会自动弹出安装`;
+        `当前：${data.local_version || data.local_built_at}\n最新：${data.version || data.remote_built_at}\n${size}下载完成后会自动弹出安装`;
       updateDownload.hidden = false;
       updateDownload.onclick = () => {
         if (window.YiduNative && window.YiduNative.downloadUpdate) {
-          window.YiduNative.downloadUpdate(data.url);
+          window.YiduNative.downloadUpdate(data.url, data.version || "");
           updateModal.hidden = true;
           toast("正在下载更新，完成后会弹出安装");
         } else {

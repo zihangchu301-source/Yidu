@@ -93,11 +93,11 @@ public class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         webView.setWebViewClient(new android.webkit.WebViewClient());
-        // 给前端一个原生下载入口：window.YiduNative.downloadUpdate(url)
+        // 给前端一个原生下载入口：window.YiduNative.downloadUpdate(url, version)
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
-            public void downloadUpdate(String url) {
-                runOnUiThread(() -> startUpdateDownload(url));
+            public void downloadUpdate(String url, String version) {
+                runOnUiThread(() -> startUpdateDownload(url, version));
             }
         }, "YiduNative");
         webView.setWebChromeClient(new WebChromeClient() {
@@ -227,7 +227,7 @@ public class MainActivity extends Activity {
         return getPackageManager().canRequestPackageInstalls();
     }
 
-    private void startUpdateDownload(String url) {
+    private void startUpdateDownload(String url, String version) {
         if (!canInstallUnknown()) {
             try {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -238,18 +238,25 @@ public class MainActivity extends Activity {
             return;
         }
         try {
+            // 版本号既用于 URL 防缓存，也用于本地文件名，避免复用上次下载的旧包
+            String ver = (version == null || version.isEmpty())
+                    ? String.valueOf(System.currentTimeMillis())
+                    : version.replaceAll("[^A-Za-z0-9._-]", "_");
+            final String dlUrl = url.contains("?") ? url : url + "?v=" + ver;
+            final String fileName = "yidu-update-" + ver + ".apk";
+
             downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
-            req.setTitle("译读 更新");
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(dlUrl));
+            req.setTitle("译读 " + ver + " 更新");
             req.setDescription("正在下载新版本…");
             req.setMimeType("application/vnd.android.package-archive");
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "yidu-update.apk");
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
             req.setAllowedOverMetered(true);
             req.setAllowedOverRoaming(true);
             updateDownloadId = downloadManager.enqueue(req);
             registerDownloadReceiver();
-            Toast.makeText(this, "开始下载更新，完成后自动弹出安装", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "开始下载 " + ver + "，完成后自动弹出安装", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             Log.e(TAG, "下载更新失败", e);
             Toast.makeText(this, "下载失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
