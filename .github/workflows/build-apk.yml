@@ -92,6 +92,15 @@ jobs:
           grep -q "openai" /tmp/applist.txt || { echo "ERROR: 缺 openai 兼容层"; exit 1; }
           echo "OK: Python 业务代码齐全"
 
+      - name: Verify v1 + v2 signature
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/yidu-1.0-debug.apk | head -1)
+          echo "--- 签名文件 ---"
+          unzip -l "$APK" | grep -E "META-INF/.*\.(RSA|DSA|EC)" || {
+            echo "ERROR: 缺少 v1 签名文件，部分手机会报「安装包没有签名文件」"; exit 1;
+          }
+          echo "OK: 含 v1 签名"
+
       - name: Report build error to release notes
         if: failure()
         env:

@@ -87,7 +87,18 @@ android {
                 storePassword System.getenv("YIDU_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("YIDU_KEY_ALIAS")
                 keyPassword System.getenv("YIDU_KEY_PASSWORD")
+                // minSdk >= 24 时 AGP 默认只签 v2/v3，APK 里没有 META-INF/*.RSA。
+                // 部分国产手机安装器据此报「安装包没有签名文件」，必须同时开 v1。
+                v1SigningEnabled true
+                v2SigningEnabled true
             }
+        }
+    }
+    // 没有注入密钥时（本地构建）也保证默认 debug 签名带 v1
+    signingConfigs {
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
 
