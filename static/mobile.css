@@ -70,7 +70,7 @@ html.is-android .book-del {
 }
 
 /* ---------- 二、安卓：书架底栏常驻，阅读页底栏点击才出现 ---------- */
-html.is-android { --dock-h: 58px; }
+html.is-android { --dock-h: 76px; }
 
 html.is-android .shelf-header,
 html.is-android .reader-header {
@@ -95,7 +95,7 @@ html.is-android .shelf-header {
   transform: none;
   opacity: 1;
   pointer-events: auto;
-  padding: 6px 8px 8px;
+  padding: 8px 8px 10px;
   gap: 0;
   flex-wrap: nowrap;
 }
@@ -109,9 +109,9 @@ html.is-android .shelf-tools {
 html.is-android .shelf-tools > * { flex: 1 1 0; min-width: 0; }
 html.is-android .shelf-tools .btn-text,
 html.is-android #btn-import {
-  padding: 10px 2px;
-  min-height: 44px;
-  font-size: 12px;
+  padding: 14px 2px;
+  min-height: 56px;
+  font-size: 14px;
   justify-content: center;
 }
 html.is-android .btn-import-plus { display: none; }
@@ -119,10 +119,10 @@ html.is-android .btn-import-plus { display: none; }
 
 /* 阅读界面：默认全部隐藏，只有正文；点一下屏幕才浮出 */
 html.is-android .reader-header {
-  padding: 5px 6px;
-  gap: 4px;
+  padding: 10px 8px;
+  gap: 3px;
   height: auto;
-  min-height: 50px;
+  min-height: 68px;
   transform: translateY(115%);
   opacity: 0;
   pointer-events: none;
@@ -136,8 +136,8 @@ html.is-android body.reader-chrome-open .reader-header {
 /* chrome-hidden 是桌面"鼠标移开就收起"的遗留类，别覆盖上面的隐藏状态 */
 html.is-android .view.chrome-hidden .reader-header {
   max-height: none;
-  padding-top: 5px;
-  padding-bottom: 5px;
+  padding-top: 10px;
+  padding-bottom: 10px;
   border-bottom-color: transparent;
 }
 
@@ -151,16 +151,18 @@ html.is-android .translate-bar {
 html.is-android body.reader-chrome-open .translate-bar { bottom: var(--dock-h); }
 
 /* 顶部没有工具栏；底部给常驻栏留够空间，滚到底不压字 */
-html.is-android .reader-content { padding: 16px 0 96px; }
-html.is-android .book-grid { padding-bottom: 88px; }
-html.is-android .reader-title { font-size: 13px; }
-html.is-android #btn-back { padding: 10px 8px; font-size: 13px; }
-html.is-android .reader-actions { gap: 1px; }
-html.is-android .lang-switch { padding: 1px; }
-html.is-android .lang-switch button { padding: 8px 7px; font-size: 12px; }
-html.is-android .reader-actions .btn-text { padding: 10px 7px; font-size: 13px; }
-html.is-android .btn-more { padding: 8px 10px; }
-html.is-android .more-dropdown button { padding: 12px 14px; font-size: 14px; }
+html.is-android .reader-content { padding: 16px 0 112px; }
+html.is-android .book-grid { padding-bottom: 104px; }
+/* 大屏手机：底栏字号与点击区一并放大，避免"字小、点不准" */
+html.is-android .reader-title { font-size: 16px; min-width: 0; }
+html.is-android #btn-back { padding: 14px 10px; font-size: 15px; }
+html.is-android .reader-actions { gap: 2px; }
+html.is-android .lang-switch { padding: 3px; }
+html.is-android .lang-switch button { padding: 12px 9px; font-size: 15px; }
+html.is-android .reader-actions .btn-text { padding: 14px 10px; font-size: 15px; }
+html.is-android .btn-more { padding: 12px 12px; font-size: 22px; }
+html.is-android .more-dropdown button { padding: 16px 18px; font-size: 16px; }
+html.is-android .more-dropdown { min-width: 168px; }
 
 /* 安卓后端没有 Windows 语音；全屏 API 在 WebView 也会把顶栏弄没 */
 html.is-android #btn-tts,
@@ -171,9 +173,9 @@ html.is-android #btn-immersive { display: none !important; }
 /* ---------- 三、划词操作栏：触控尺寸 + 不被裁切 ---------- */
 html.is-android .sel-toolbar { padding: 6px; gap: 2px; max-width: calc(100vw - 16px); flex-wrap: wrap; }
 html.is-android .sel-toolbar button {
-  padding: 10px 12px;
-  min-height: 42px;
-  font-size: 13px;
+  padding: 14px 14px;
+  min-height: 48px;
+  font-size: 14px;
 }
 html.is-android .bubble {
   width: min(320px, calc(100vw - 24px));
@@ -238,7 +240,7 @@ html.is-android .back-panel {
   bottom: auto;
   padding: 12px 18px;
 }
-html.is-android .toast { bottom: 92px; }
+html.is-android .toast { bottom: 108px; }
 /* 检查更新弹窗：版本信息里的换行要显示出来 */
 html.is-android #update-detail { white-space: pre-line; line-height: 1.8; }
 html.is-android #update-download { min-height: 42px; }
