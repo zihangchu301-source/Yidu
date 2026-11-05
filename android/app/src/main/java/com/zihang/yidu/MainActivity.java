@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.res.AssetManager;
 import android.database.Cursor;
 import android.net.Uri;
@@ -28,6 +29,7 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -50,6 +52,8 @@ public class MainActivity extends Activity {
     private static final String KEY_DOWNLOAD_ID = "download_id";
 
     private WebView webView;
+    /** 包住 WebView 的根容器：颜色跟页面主题一致，任何缝隙都只会露出页面色，不会露黑。 */
+    private View rootContainer;
     private ValueCallback<Uri[]> pendingFileCallback;
     private int port = 8720;
     private DownloadManager downloadManager;
@@ -78,14 +82,18 @@ public class MainActivity extends Activity {
             showFatal("解压界面资源失败", e);
             return;
         }
-        // 版本文件由 Gradle 构建时生成。新包若缺这个文件，删掉上次的旧文件，
-        // 否则"检查更新"会拿着旧版本号一直提示有新版本。
+        // 版本文件由 Gradle 构建时生成。新包若缺这个文件，**不要删旧文件** ——
+        // 删了会让后端以为"本地是 0 版"，每次都提示有新版本，用户就会反复下载、
+        // 反复被安装器告知"已安装相同版本"（用户反馈的"要装两次"就是这个）。
         File versionTarget = new File(home, "version.json");
         try {
             copyAssetFile("version.json", versionTarget);
         } catch (IOException ignored) {
-            try { versionTarget.delete(); } catch (Exception ignored2) { }
+            // 保留上一次的版本文件
         }
+        // 再用系统里真实的已安装版本覆盖一次：这是最权威的"当前版本"，
+        // 从老版本升级上来（assets 里没有 version.json）也不会再误报有更新。
+        syncInstalledVersion(versionTarget);
         resumePendingUpdate();
 
         try {
@@ -117,7 +125,14 @@ public class MainActivity extends Activity {
         s.setTextZoom(100);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
-        webView.setWebViewClient(new android.webkit.WebViewClient());
+        webView.setWebViewClient(new android.webkit.WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // 页面首帧出来后再收一次状态栏：WebView 完成布局时，系统偶尔会把状态栏还回来
+                hideSystemBars();
+            }
+        });
         // 给前端一个原生下载入口：window.YiduNative.downloadUpdate(url, version)
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
@@ -157,11 +172,23 @@ public class MainActivity extends Activity {
             }
         });
 
-        setContentView(webView, new ViewGroup.LayoutParams(
+        // 用一层同色容器把 WebView 包起来，并且**两层都不吃系统 insets**：
+        // 这是让网页真正铺到状态栏区域的最后一道保险 ——
+        // 就算某台 ROM 没有把 WebView 撑满，露出来的也是容器颜色（页面色），不会是黑条。
+        FrameLayout root = new FrameLayout(this);
+        root.setFitsSystemWindows(false);
+        root.setBackgroundColor(chromeDark ? 0xFF16181C : 0xFFF7F7F5);
+        webView.setFitsSystemWindows(false);
+        root.addView(webView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        rootContainer = root;
+        setContentView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
         // ?android=1 让服务端给 <html> 加 is-android，前端启用触摸适配层
         webView.loadUrl("http://127.0.0.1:" + port + "/?android=1");
+        // 等 WebView 完成首次布局再收一次状态栏（有的 ROM 会把刚隐藏的状态栏还回来）
+        webView.postDelayed(this::hideSystemBars, 600);
     }
 
     @Override
@@ -249,6 +276,39 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * 把系统里真实的已安装版本写进 filesDir/version.json。
+     *
+     * 为什么需要：后端 /api/app/update 靠这个文件判断"本地是第几版"。
+     * 以前这个文件只从 assets 复制，一旦复制失败或被删掉，本地版本就成了 0，
+     * 于是每次都提示"有新版本" → 用户反复下载同一个包 → 安装器提示
+     * "已安装相同版本，可直接打开或重新安装"（就是要装两次的那个现象）。
+     * PackageManager 读到的 versionCode / versionName 才是权威值。
+     */
+    private void syncInstalledVersion(File target) {
+        try {
+            String name;
+            int code;
+            try {
+                PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                name = pi.versionName == null ? "1.0" : pi.versionName;
+                code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                        ? (int) pi.getLongVersionCode() : pi.versionCode;
+            } catch (Exception ignored) {
+                return; // 连包信息都读不到就沿用 assets 里那份
+            }
+            if (code <= 0) return;
+            String json = "{\"version_code\":" + code
+                    + ",\"version_name\":\"" + name + "\""
+                    + ",\"built_at\":\"" + name + "\"}";
+            try (FileOutputStream out = new FileOutputStream(target)) {
+                out.write(json.getBytes("UTF-8"));
+            }
+        } catch (Exception ignored) {
+            // 写不进去（磁盘满 / 只读）就沿用 assets 里的版本文件
+        }
+    }
+
     /** 启动时读一次配置里的主题，避免网页加载前窗口底色和页面不一致。 */
     private boolean readDarkTheme() {
         try (BufferedReader r = new BufferedReader(
@@ -282,13 +342,19 @@ public class MainActivity extends Activity {
                         WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                 ctl.hide(WindowInsets.Type.statusBars());
             }
-        } else {
-            // 旧系统：LAYOUT_FULLSCREEN 让内容延伸上去，FULLSCREEN 把状态栏藏掉
-            w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            w.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        }
+        // 部分国产 ROM 不认上面的新接口，只认老的标志位（游戏全屏就是这套）。
+        // 两套一起下，谁生效都行；重复设置没有副作用。
+        w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        w.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        // 状态栏隐藏会触发一次重排：把 WebView 重新撑满，避免顶部留出空档
+        if (webView != null) {
+            webView.requestLayout();
+            if (rootContainer != null) rootContainer.requestLayout();
         }
     }
 
@@ -312,6 +378,7 @@ public class MainActivity extends Activity {
         w.setBackgroundDrawable(new ColorDrawable(color));
         w.getDecorView().setBackgroundColor(color);
         if (webView != null) webView.setBackgroundColor(color);
+        if (rootContainer != null) rootContainer.setBackgroundColor(color);
         // 2) 状态栏 / 导航栏染成页面底色 —— 这是消掉顶部黑条的关键
         w.setStatusBarColor(color);
         w.setNavigationBarColor(color);
@@ -469,9 +536,64 @@ public class MainActivity extends Activity {
                 fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(fallback);
             }
+            // 安装器已经拉起：60 秒后删掉安装包，并顺手清理以前攒下的历史更新包
+            scheduleCleanupAfterInstall(id);
         } catch (Exception e) {
             Log.e(TAG, "唤起安装失败", e);
             Toast.makeText(this, "无法打开安装界面，请到「下载」目录手动安装", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /**
+     * 安装器拉起后清理安装包。
+     *
+     * 用户反馈：每装一次就在「下载」里留一个 yidu-update-x.x.x.apk，越攒越多，
+     * 一不留神点到旧包，安装器就提示「已安装相同版本」，还以为要装两遍。
+     *
+     * 这里用 DownloadManager.remove()：不需要存储权限，Android 11+ 也能删掉
+     * 由本 App 创建的那条下载（连同文件）。延迟 60 秒是为了留时间给安装器读完。
+     */
+    private void scheduleCleanupAfterInstall(long id) {
+        new android.os.Handler(getMainLooper()).postDelayed(() -> {
+            try {
+                if (downloadManager == null) {
+                    downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                }
+                if (downloadManager != null) downloadManager.remove(id);
+            } catch (Exception ignored) {
+            }
+            purgeOldUpdateApks();
+        }, 60_000L);
+    }
+
+    /** 清掉以前所有已下载完成的「译读」更新包（只动本 App 自己创建的下载记录）。 */
+    private void purgeOldUpdateApks() {
+        try {
+            DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            if (dm == null) return;
+            Cursor c = dm.query(new DownloadManager.Query());
+            if (c == null) return;
+            try {
+                int idCol = c.getColumnIndex(DownloadManager.COLUMN_ID);
+                int titleCol = c.getColumnIndex(DownloadManager.COLUMN_TITLE);
+                int uriCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                int statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                if (idCol < 0) return;
+                while (c.moveToNext()) {
+                    String title = titleCol >= 0 ? c.getString(titleCol) : null;
+                    String localUri = uriCol >= 0 ? c.getString(uriCol) : null;
+                    int status = statusCol >= 0 ? c.getInt(statusCol) : 0;
+                    boolean mine = (title != null && title.startsWith("译读"))
+                            || (localUri != null && localUri.contains("yidu-update-"));
+                    // 只清已完成 / 失败的历史包，正在下载的不动
+                    boolean settled = status == DownloadManager.STATUS_SUCCESSFUL
+                            || status == DownloadManager.STATUS_FAILED;
+                    if (mine && settled) dm.remove(c.getLong(idCol));
+                }
+            } finally {
+                c.close();
+            }
+        } catch (Exception ignored) {
         }
     }
 

@@ -701,6 +701,16 @@ def create_app(cfg, static_folder: str | None = None,
 
         local_at = local.get("built_at", "")
         remote_at = remote.get("built_at", "")
+        # 本地版本信息缺失（极老版本升上来 / 文件被清理）：绝不能当成"有更新"。
+        # 否则每次检查都提示新版 → 反复下载同一个包 → 安装器说"已安装相同版本"，
+        # 用户看到的就是"要装两次才行"。
+        if not local:
+            return jsonify({
+                "has_update": False,
+                "local_built_at": "未知",
+                "local_version": "",
+                "note": "本地版本信息缺失，如确认有新版本请手动下载",
+            })
         # 优先用递增的版本号判断（不受设备时间影响）；老格式才退回时间比较
         local_code = int(local.get("version_code") or 0)
         remote_code = int(remote.get("version_code") or 0)
