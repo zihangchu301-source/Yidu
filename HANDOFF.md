@@ -1,6 +1,6 @@
 # 译读 · 项目交接文档
 
-> 最后更新：2026-11-05 · 安卓最新版 **1.0.25**（version_code 25）
+> 最后更新：2026-11-05 · 安卓最新版 **1.0.26**（version_code 26）
 
 ## 1. 源码在哪
 
@@ -95,19 +95,20 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 - 安卓不显示书名、左下角浮层返回、TTS 朗读
 
 之前踩过的坑（**别改回去**）：`python.srcDirs` 相对路径按模块目录解析、Chaquopy 任务需显式 `dependsOn`、代码包叫 `app.imy` 不是 `app.zip`、固定链接会被 CDN 缓存成旧包。
+**顶部黑条（1.0.26 已修，别再改回隐藏状态栏）**：主题原本是 `Theme.Material.NoActionBar`（深色），一旦用 `FLAG_FULLSCREEN` 隐藏状态栏，状态栏那块区域就由窗口背景填 → 白色页面上出现纯黑条。正确做法是**保留状态栏并染色**：`res/values/styles.xml` 的 `AppTheme` 继承 `Theme.Material.Light.NoActionBar`，`applyChromeColor()` 里 `setStatusBarColor/setNavigationBarColor` 设为页面底色，API 30+ 用 `setSystemBarsAppearance`、旧版用 `SYSTEM_UI_FLAG_LIGHT_STATUS_BAR` 调图标明暗。**不要再加 `FLAG_FULLSCREEN` / `setDecorFitsSystemWindows(false)` / `hide(statusBars())`。**
 
 ## 8. 当前状态与待办
 
-**已完成**：1.0.25 发布，v1+v2 签名、固定密钥、应用内更新链路加固（11 项）、书架/阅读页布局、底栏放大与美化。
+**已完成**：1.0.26 发布（顶部黑条根治：状态栏改为染色，主题换 Light），此前完成 v1+v2 签名、固定密钥、应用内更新链路加固（11 项）、书架/阅读页布局、底栏放大与美化。
 
-**待确认**：用户手机里「当前版本」是否 1.0.25；顶部黑条与内容下方白色空块在 1.0.25 是否消失。此前多次出现下载到缓存旧包，排查任何界面问题前**先让用户点「检查更新」确认版本号**。
+**待确认**：1.0.26 装上后顶部是否还有黑条。此前多次出现下载到缓存旧包，排查任何界面问题前**先让用户点「检查更新」确认版本号 ≥ 1.0.26**。
 
 **待办**：
 
 1. `D:\EPUBReader\config.ini` 里 DeepSeek API Key 明文存储 → 需轮换密钥并改用环境变量/系统凭据
 2. 手机与电脑数据不互通 → 需账号 + 云端数据库，或做导出/导入
 3. 安卓版 TTS 朗读不可用（依赖 Windows .NET 语音）
-4. 若 1.0.25 仍有黑条，按用户新截图从 WebView 绘制层继续定位，不要归因于系统刘海
+4. 若 1.0.26 仍有黑条：先确认「隐藏刘海/挖孔」系统开关是否开启（开启时该区域由 ROM 强制涂黑，任何 App 都画不进去），再考虑 `layoutInDisplayCutoutMode`
 
 ## 9. 常用命令
 
