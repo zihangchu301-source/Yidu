@@ -6,14 +6,19 @@
 
 | 用途 | 路径 |
 |---|---|
-| **主仓库（本地）** | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu-repo` |
+| **主仓库（本地，唯一带 git / 能触发 CI）** | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu-repo` |
 | **远程仓库** | https://github.com/zihangchu301-source/Yidu |
 | 桌面版**实际运行目录**（含数据、exe） | `D:\EPUBReader` |
 | 桌面版上传快照（纯净源码，无数据） | `D:\EPUBReader_Upload` |
+| 桌面版工作副本（2026-11-05 迁移） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_desktop` |
+| 手机版源码快照（2026-11-05 迁移，无 .git） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_phone` |
 | 安卓签名密钥备份（**勿外泄**） | `E:\workbuddyClaw\2026-11-03-18-15-07\signing\` |
 | 本次会话工作日志 | `E:\workbuddyClaw\2026-11-03-18-15-07\.workbuddy\memory\2026-11-05.md` |
 
-主仓库是**唯一构建来源**。桌面版目录是另一份可直接运行的副本，改它不会更新 APK。
+主仓库是**唯一构建来源**：只有改 `Yidu-repo` 并 `git push` 才会触发自动打包。
+`Yidu_phone` 是纯源码快照（**不含 .git**），仅供查看/交接，改它不会发布。
+`Yidu_desktop` 是 `D:\EPUBReader` 的完整副本（含 `config.ini` 明文密钥、`state/reader.db` 阅读记录、`static/books` 书籍缓存），**不要提交到任何仓库**。原 `D:\EPUBReader` 保留未动。
+桌面版目录是另一份可直接运行的副本，改它不会更新 APK。
 
 ## 2. 仓库结构
 
@@ -128,6 +133,7 @@ unzip -p yidu.apk assets/version.json
 
 - 先读 `.workbuddy/memory/` 里最近的日志，再动手
 - `.workbuddy/` 是项目数据，**不要删**
+- 工作区有 4 个并列目录：`Yidu-repo`（唯一 git 仓库）、`Yidu_desktop`（桌面版副本）、`Yidu_phone`（源码快照）、`signing`（密钥）。**只在 `Yidu-repo` 里改代码和提交**
 - 改安卓前端只动 `static/` 下文件和 `app.js` 的 `IS_ANDROID` 分支；桌面行为不能回归
 - 改完推 `main`，等 Actions 成功，把**带版本号的唯一链接**给用户；不要给会被缓存的固定链接
 - 用户偏好：直接给方案、先说风险与改动范围、文档简洁、参考图只作参考不照搬、不臆测系统原因
