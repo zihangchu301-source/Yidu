@@ -40,31 +40,70 @@
   });
 
   /* ---- 1c. 书架：长按书封面删除（不显示垃圾桶图标） -------------------
-     直接触发原本的删除按钮 → 复用同一套确认弹窗与接口，不改动业务代码。 */
+     直接触发原本的删除按钮 → 复用同一套确认弹窗与接口，不改动业务代码。
+     定时器 + 系统 contextmenu 双保险；手指轻微移动不算取消。 */
   let longPressTimer = null;
+  let longPressCard = null;
+  let longPressStart = null;
   let suppressClick = false;
-  const cancelLongPress = () => {
+
+  function cancelLongPress() {
     clearTimeout(longPressTimer);
     longPressTimer = null;
-  };
+    longPressCard = null;
+    longPressStart = null;
+  }
+
+  function triggerBookDelete(card) {
+    if (!card || card.dataset.yiduDeleting === "1") return;
+    card.dataset.yiduDeleting = "1";
+    const del = card.querySelector(".book-del");
+    if (del) del.click();                    // 弹出「确定删除」确认框
+    if (navigator.vibrate) navigator.vibrate(30);
+    // 长按结束后 WebView 还会补发一个 click，别让它顺手把书打开
+    suppressClick = true;
+    setTimeout(() => {
+      suppressClick = false;
+      delete card.dataset.yiduDeleting;
+    }, 900);
+  }
+
   bookGrid.addEventListener("touchstart", (e) => {
     const card = e.target.closest && e.target.closest(".book-card");
-    if (!card) return;
+    const p = e.touches && e.touches[0];
+    if (!card || !p) return;
     cancelLongPress();
+    longPressCard = card;
+    longPressStart = { x: p.clientX, y: p.clientY };
     longPressTimer = setTimeout(() => {
       longPressTimer = null;
-      const del = card.querySelector(".book-del");
-      if (del) del.click();                 // 弹出「确定删除」确认框
-      if (navigator.vibrate) navigator.vibrate(30);
-      // 长按结束后 WebView 还会补发一个 click，别让它顺手把书打开
-      suppressClick = true;
-      setTimeout(() => { suppressClick = false; }, 800);
-    }, 600);
+      const target = longPressCard;
+      cancelLongPress();
+      if (target) triggerBookDelete(target);
+    }, 550);
   }, { passive: true });
+
+  bookGrid.addEventListener("touchmove", (e) => {
+    const p = e.touches && e.touches[0];
+    if (!longPressStart || !p) return;
+    // 只有明显滑动（滚书架）才取消，手指轻微抖动不算
+    if (Math.abs(p.clientX - longPressStart.x) > 14 ||
+        Math.abs(p.clientY - longPressStart.y) > 14) cancelLongPress();
+  }, { passive: true });
+
   ["touchend", "touchcancel"].forEach((name) => {
     bookGrid.addEventListener(name, cancelLongPress, { passive: true });
   });
-  bookGrid.addEventListener("touchmove", cancelLongPress, { passive: true });
+
+  // 系统长按事件兜底：有些 WebView 的 touch 定时器会被省电策略延后
+  bookGrid.addEventListener("contextmenu", (e) => {
+    const card = e.target.closest && e.target.closest(".book-card");
+    if (!card) return;
+    e.preventDefault();
+    cancelLongPress();
+    triggerBookDelete(card);
+  });
+
   bookGrid.addEventListener("click", (e) => {
     if (!suppressClick) return;
     suppressClick = false;

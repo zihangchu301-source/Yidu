@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -18,6 +19,8 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -53,12 +56,22 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 不显示系统状态栏（时间/信号/电量）；不做沉浸模式，仅此一项。
-        // 再让页面铺到屏幕顶端：否则状态栏位置会露出窗口底色，出现一条黑边。
+        // 顶部不显示系统状态栏的时间/信号/电量；静态设置，没有任何模式切换。
+        // 黑条来自 Theme.Material.NoActionBar 的深色窗口底色：状态栏隐藏后那块区域露出来了。
+        // 两个办法一起上：让 WebView 自己画到屏幕顶端 + 窗口底色兜成页面同色。
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        View decor = getWindow().getDecorView();
-        decor.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        getWindow().setBackgroundDrawable(new ColorDrawable(0xFFF7F7F5));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(false);
+            WindowInsetsController ctl = getWindow().getDecorView().getWindowInsetsController();
+            if (ctl != null) ctl.hide(WindowInsets.Type.statusBars());
+        } else {
+            View decor = getWindow().getDecorView();
+            decor.setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             getWindow().setStatusBarColor(Color.TRANSPARENT);
         }

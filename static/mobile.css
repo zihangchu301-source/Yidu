@@ -13,6 +13,8 @@ html.is-android body {
   overflow-x: hidden;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+  /* 根元素也铺底色：页面画到状态栏区域时，不会出现黑边 */
+  background: var(--bg);
 }
 /* 100vh 在安卓状态栏/键盘弹出时不准，用动态视口高度 */
 html.is-android #reader-view.active { height: 100dvh; }
@@ -58,8 +60,15 @@ html.is-android .book-grid {
 }
 html.is-android .book-title { font-size: 13px; }
 
-/* 手机上不显示垃圾桶，改成长按书封面删除（mobile.js 里处理） */
-html.is-android .book-del { display: none !important; }
+/* 手机上不显示垃圾桶，改成长按书封面删除（mobile.js 里处理）。
+   用 visibility 而不是 display:none：部分 WebView 不会给 display:none 的元素派发 .click() */
+html.is-android .book-del {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+}
 
 /* ---------- 二、安卓：书架底栏常驻，阅读页底栏点击才出现 ---------- */
 html.is-android { --dock-h: 76px; }
@@ -87,7 +96,7 @@ html.is-android .shelf-header {
   transform: none;
   opacity: 1;
   pointer-events: auto;
-  padding: 8px 8px 10px;
+  padding: 8px 8px 16px;
   gap: 0;
   flex-wrap: nowrap;
 }
@@ -111,7 +120,7 @@ html.is-android .btn-import-plus { display: none; }
 
 /* 阅读界面：默认全部隐藏，只有正文；点一下屏幕才浮出 */
 html.is-android .reader-header {
-  padding: 10px 8px;
+  padding: 10px 8px 16px;
   gap: 3px;
   height: auto;
   min-height: 68px;
@@ -129,7 +138,7 @@ html.is-android body.reader-chrome-open .reader-header {
 html.is-android .view.chrome-hidden .reader-header {
   max-height: none;
   padding-top: 10px;
-  padding-bottom: 10px;
+  padding-bottom: 16px;
   border-bottom-color: transparent;
 }
 
