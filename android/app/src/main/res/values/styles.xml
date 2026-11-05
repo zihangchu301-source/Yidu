@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      AppTheme —— 应用主题
+      ====================
+      为什么不用 @android:style/Theme.Material.NoActionBar：
+        Theme.Material 是**深色**主题，它的 windowBackground 是深灰/近黑。
+        以前状态栏被 FLAG_FULLSCREEN 隐藏后，那块区域改由窗口背景填充，
+        于是白色页面正上方就出现一条纯黑条（用户反复反馈的那个 bug）。
+      这里改成 Light 主题：窗口背景 / 状态栏 / 导航栏全部用页面的浅色底，
+      深色模式由 MainActivity.applyChromeColor() 在运行时改色。
+      即使某些 ROM 忽略了我们的运行时染色，露出来的也是浅色，不会再是纯黑。
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFF7F7F5</item>
+        <item name="android:colorBackground">#FFF7F7F5</item>
+        <item name="android:statusBarColor">#FFF7F7F5</item>
+        <item name="android:navigationBarColor">#FFF7F7F5</item>
+    </style>
+
+</resources>

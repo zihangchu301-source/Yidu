@@ -60,22 +60,21 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 让应用自己画满整屏（和微信读书一样），状态栏图标仍隐藏。
-        // 之前黑条 = 状态栏区域没被网页覆盖、露出了系统底色；
-        // 白块 = 网页内容不够高、露出了窗口底色。两者都由"页面铺满"解决。
+        // 顶部黑条根因（1.0.25 仍在，已定位）：
+        //   以前用 FLAG_FULLSCREEN 把状态栏隐藏掉，指望网页铺到状态栏区域。
+        //   但网页并没有真的铺进去 —— 那块地方交给"窗口背景"填，而主题是
+        //   Theme.Material（深色），于是白色页面正上方出现一条纯黑条；
+        //   深色页面时同样有，只是和深色底混在一起不明显。
+        // 现在的做法改成「保留状态栏、把它染成页面底色」（微信读书就是这么做的）：
+        //   状态栏始终由系统绘制，颜色由 applyChromeColor() 指定，
+        //   再也没有任何区域会露出系统深色底。
         Window w = getWindow();
-        w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        w.setStatusBarColor(Color.TRANSPARENT);
-        w.setNavigationBarColor(Color.TRANSPARENT);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            w.setDecorFitsSystemWindows(false);
-            WindowInsetsController ctl = w.getDecorView().getWindowInsetsController();
-            if (ctl != null) ctl.hide(WindowInsets.Type.statusBars());
+            // 内容从状态栏下方开始，状态栏区域完全由系统按我们给的颜色画
+            w.setDecorFitsSystemWindows(true);
         } else {
-            w.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         }
         chromeDark = readDarkTheme();
         applyChromeColor(chromeDark);
@@ -272,14 +271,47 @@ public class MainActivity extends Activity {
         return false;
     }
 
-    /** 窗口、WebView、系统栏底色统一跟着页面主题走，杜绝黑条 / 白块。 */
+    /**
+     * 窗口、状态栏、导航栏、WebView 底色统一跟着页面主题走。
+     *
+     * 关键改动（消灭顶部黑条）：状态栏不再隐藏，而是**直接染成页面底色**。
+     * 系统始终自己画状态栏，只是用我们给的颜色，所以不可能再露出深色窗口底；
+     * 图标明暗也一起适配，浅色底用深色图标（否则白底上白图标看不见）。
+     */
     private void applyChromeColor(boolean dark) {
         chromeDark = dark;
         int color = dark ? 0xFF16181C : 0xFFF7F7F5;
-        getWindow().setBackgroundDrawable(new ColorDrawable(color));
+        Window w = getWindow();
+        // 1) 窗口 + WebView 底色：内容不满一屏时不会露出深色窗口底（白色空块也是这个原因）
+        w.setBackgroundDrawable(new ColorDrawable(color));
+        w.getDecorView().setBackgroundColor(color);
         if (webView != null) webView.setBackgroundColor(color);
-        getWindow().setStatusBarColor(Color.TRANSPARENT);
-        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        // 2) 状态栏 / 导航栏染成页面底色 —— 这是消掉顶部黑条的关键
+        w.setStatusBarColor(color);
+        w.setNavigationBarColor(color);
+        // 3) 状态栏 / 导航栏图标明暗跟随主题
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController ctl = w.getDecorView().getWindowInsetsController();
+            if (ctl != null) {
+                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                ctl.setSystemBarsAppearance(dark ? 0 : mask, mask);
+            }
+        } else {
+            int flags = w.getDecorView().getSystemUiVisibility();
+            if (dark) {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+            } else {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+            }
+            w.getDecorView().setSystemUiVisibility(flags);
+        }
     }
 
     /* ---- 应用内更新：下载 APK 并唤起系统安装器 -------------------------
