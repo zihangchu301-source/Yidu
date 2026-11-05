@@ -15,7 +15,11 @@ html.is-android body {
   -webkit-tap-highlight-color: transparent;
   /* 根元素也铺底色：页面画到状态栏区域时，不会出现黑边 */
   background: var(--bg);
+  /* 内容不够一屏时也要铺满，否则下面会露出窗口底色（一大块白/黑） */
+  min-height: 100vh;
+  min-height: 100dvh;
 }
+html.is-android #shelf-view { min-height: 100vh; min-height: 100dvh; }
 /* 100vh 在安卓状态栏/键盘弹出时不准，用动态视口高度 */
 html.is-android #reader-view.active { height: 100dvh; }
 
@@ -56,7 +60,7 @@ html.is-android .shelf-stats { padding: 28px 12px 0; }
 html.is-android .book-grid {
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 16px 12px;
-  padding: 16px 12px 80px;
+  padding: 28px 12px 80px;
 }
 html.is-android .book-title { font-size: 13px; }
 
