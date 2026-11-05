@@ -1,6 +1,6 @@
 # 译读 · 项目交接文档
 
-> 最后更新：2026-11-05 · 安卓最新版 **1.0.28**（version_code 28）
+> 最后更新：2026-11-05 · 安卓最新版 **1.0.29**（version_code 29）
 
 ## 1. 源码在哪
 
@@ -104,21 +104,26 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 - 安卓不显示书名、左下角浮层返回、TTS 朗读
 
 之前踩过的坑（**别改回去**）：`python.srcDirs` 相对路径按模块目录解析、Chaquopy 任务需显式 `dependsOn`、代码包叫 `app.imy` 不是 `app.zip`、固定链接会被 CDN 缓存成旧包。
-**顶部黑条 + 沉浸式（1.0.26 → 1.0.27，别再改回深色主题）**：黑条的真正原因是主题 `Theme.Material.NoActionBar`（深色）—— 隐藏状态栏后那块区域由窗口背景填充，白色页面上就露出纯黑条。1.0.26 先改成"保留状态栏 + 染色"，1.0.27 又改回沉浸式（隐藏状态栏、内容铺满），**前提是主题已换成浅色 `AppTheme` 且三层底色兜底**。实现见 `MainActivity.hideSystemBars()`（API 30+ 用 `setDecorFitsSystemWindows(false)` + `WindowInsetsController.hide(statusBars())`，旧系统 `LAYOUT_FULLSCREEN|FULLSCREEN`，并在 `onWindowFocusChanged` 里重设）。**不要**把主题改回 `Theme.Material` 再套 FLAG_FULLSCREEN —— 那正是黑条的成因。
+**顶部黑条 + 沉浸式（1.0.26 → 1.0.29，别再改回深色主题）**：
+- 黑条第一层原因是主题 `Theme.Material.NoActionBar`（深色）—— 隐藏状态栏后那块区域由窗口背景填充，白色页面就露纯黑条。1.0.26 已换成浅色 `AppTheme`。
+- **第二层原因（1.0.29 才修掉，决定性）**：没有设 `layoutInDisplayCutoutMode`。有挖孔的屏幕在默认 DEFAULT 模式下，系统把「状态栏 + 挖孔安全区」整条留黑。微信读书只有一个摄像头黑点，就是因为它设了 `SHORT_EDGES`。
+- 现在的完整实现见 `MainActivity.hideSystemBars()`：`setDecorFitsSystemWindows(false)` + `WindowInsetsController.hide(statusBars())` + `LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`（API 28+）+ legacy 标志 `LAYOUT_FULLSCREEN|FULLSCREEN|IMMERSIVE_STICKY`，并在 `onPageFinished` / 600ms / `onWindowFocusChanged` 里重设。
+- WebView 外包一层同色 `FrameLayout`，两者都 `setFitsSystemWindows(false)`，保证任何缝隙只露页面色。
+- **不要**把主题改回 `Theme.Material`，也**不要**删掉 cutout 设置 —— 这两个任一缺失，黑条就回来。
 
 ## 8. 当前状态与待办
 
-**已完成**：1.0.28 发布（沉浸式第三次加固：同色容器 + 新旧两套全屏标志 + 布局后重收；安装包自动清理；版本号以 PackageManager 为准），1.0.27 沉浸式，1.0.26 状态栏染色 + 黑条根因定位（主题深色）。
+**已完成**：1.0.29 发布（挖孔屏黑带根治：`layoutInDisplayCutoutMode=SHORT_EDGES`；更新流程改为只点一次 + 同版本不再拉起安装器），1.0.28 同色容器/安装包清理/版本号以系统为准，1.0.27 沉浸式，1.0.26 主题换浅色 + 黑条第一层根因。
 
-**待确认**：1.0.28 装上后顶部是否既无状态栏、也无黑条（务必先点「检查更新」确认当前版本 ≥ 1.0.28）。
+**待确认**：1.0.29 装好后顶部是否只剩挖孔那一个小黑点（和微信读书一致），并确认「检查更新」显示当前版本 1.0.29。
 
 **待办**：
 
 1. `D:\EPUBReader\config.ini` 里 DeepSeek API Key 明文存储 → 需轮换密钥并改用环境变量/系统凭据
 2. 手机与电脑数据不互通 → 需账号 + 云端数据库，或做导出/导入
 3. 安卓版 TTS 朗读不可用（依赖 Windows .NET 语音）
-4. **保底方案**：若 1.0.28 的沉浸式在用户机型上仍然露黑条，回退到 1.0.26 的方案（保留状态栏 + 染色，用户已确认无黑框），代价是顶部有一条同色状态栏。二选一，不要再反复试「又藏状态栏又想无黑条」的第三条路。
-5. 若顶部内容被挖孔/刘海遮挡：`hideSystemBars()` 里加 `layoutInDisplayCutoutMode=SHORT_EDGES`，并把 `getDisplayCutout().getSafeInsetTop()` 通过 JS 接口传给前端做 `padding-top`
+4. 若 1.0.29 仍有黑带：检查系统「隐藏屏幕刘海/挖孔」是否开启；再不行回退 1.0.26 方案（保留状态栏 + 染色，用户已确认无黑框）
+5. 前端还有一批未提交的样式改动已被 1.0.29 打包（划线底色改柔和米黄 `--highlight`、对照译文左侧竖线 `--quote-line`），如需回退单独处理
 
 ## 9. 常用命令
 
