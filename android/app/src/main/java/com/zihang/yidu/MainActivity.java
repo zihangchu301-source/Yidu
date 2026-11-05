@@ -14,6 +14,7 @@ import android.os.Environment;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -46,6 +47,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 不显示系统状态栏（时间/信号/电量）；不做沉浸模式，仅此一项
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
         File home = getFilesDir();
         try {
