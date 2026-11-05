@@ -1,6 +1,6 @@
 # 译读 · 项目交接文档
 
-> 最后更新：2026-11-05 · 安卓最新版 **1.0.27**（version_code 27）
+> 最后更新：2026-11-05 · 安卓最新版 **1.0.28**（version_code 28）
 
 ## 1. 源码在哪
 
@@ -72,9 +72,12 @@ APK 同时开启 v1 + v2 签名，否则部分国产手机报「安装包没有�
 
 1. Gradle 配置阶段生成 `assets/version.json`（`built_at` / `version_name` / `version_code` / `apk` 唯一链接）
 2. 同一份文件既打进 APK，也由 CI **最后**上传到 Release
-3. Java 启动时复制到 `filesDir`；后端 `GET /api/app/update` 比对版本号
-4. 前端弹窗 → `window.YiduNative.downloadUpdate(url, version)` → DownloadManager → 系统安装器
-5. 防缓存：唯一文件名 + `?v=` 参数 + 本地文件按版本命名
+3. Java 启动时把 assets 的 version.json 复制到 `filesDir`，**再用 PackageManager 读到的真实 versionCode/versionName 覆盖写入**（1.0.28 起）——这是权威值，避免本地版本变成 0 导致"永远提示有新版本 → 反复下载同一个包 → 安装器说已安装相同版本"
+4. Java 启动时复制 assets 失败**不删**旧 version.json（删了就等于本地 0 版）
+5. 后端 `GET /api/app/update` 比对版本号；本地版本信息缺失时直接返回 `has_update=false`，不误报
+6. 前端弹窗 → `window.YiduNative.downloadUpdate(url, version)` → DownloadManager → 系统安装器
+7. 安装器拉起后 60 秒 `DownloadManager.remove(id)` 删安装包，并清理历史遗留的 `yidu-update-*.apk`
+8. 防缓存：唯一文件名 + `?v=` 参数 + 本地文件按版本命名
 
 CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删。
 
@@ -99,16 +102,17 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 
 ## 8. 当前状态与待办
 
-**已完成**：1.0.27 发布（沉浸式：隐藏状态栏 + 内容铺满，黑条同时消失；主题换成浅色 AppTheme），此前完成 1.0.26 状态栏染色、v1+v2 签名、固定密钥、应用内更新链路加固（11 项）、书架/阅读页布局、底栏放大与美化。
+**已完成**：1.0.28 发布（沉浸式第三次加固：同色容器 + 新旧两套全屏标志 + 布局后重收；安装包自动清理；版本号以 PackageManager 为准），1.0.27 沉浸式，1.0.26 状态栏染色 + 黑条根因定位（主题深色）。
 
-**待确认**：1.0.27 装上后顶部是否既无状态栏、也无黑条（并确认弹窗里版本号 ≥ 1.0.27，此前多次出现下载到缓存旧包）。
+**待确认**：1.0.28 装上后顶部是否既无状态栏、也无黑条（务必先点「检查更新」确认当前版本 ≥ 1.0.28）。
 
 **待办**：
 
 1. `D:\EPUBReader\config.ini` 里 DeepSeek API Key 明文存储 → 需轮换密钥并改用环境变量/系统凭据
 2. 手机与电脑数据不互通 → 需账号 + 云端数据库，或做导出/导入
 3. 安卓版 TTS 朗读不可用（依赖 Windows .NET 语音）
-4. 若 1.0.27 顶部内容被挖孔/刘海遮挡：在 `hideSystemBars()` 里加 `layoutInDisplayCutoutMode=SHORT_EDGES`，并把 `getDisplayCutout().getSafeInsetTop()` 通过 JS 接口传给前端做 `padding-top`
+4. **保底方案**：若 1.0.28 的沉浸式在用户机型上仍然露黑条，回退到 1.0.26 的方案（保留状态栏 + 染色，用户已确认无黑框），代价是顶部有一条同色状态栏。二选一，不要再反复试「又藏状态栏又想无黑条」的第三条路。
+5. 若顶部内容被挖孔/刘海遮挡：`hideSystemBars()` 里加 `layoutInDisplayCutoutMode=SHORT_EDGES`，并把 `getDisplayCutout().getSafeInsetTop()` 通过 JS 接口传给前端做 `padding-top`
 
 ## 9. 常用命令
 
