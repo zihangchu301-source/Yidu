@@ -33,10 +33,21 @@ html.is-android .reader-content .seg {
 html.is-android .reader-content { -webkit-overflow-scrolling: touch; }
 html.is-android .reader-content .inner {
   max-width: 100%;
+  width: auto;
   /* 左右留白加宽（16 → 22）：原来文字几乎贴着屏幕边，读起来"很满"。
      微信读书这类阅读器的边距大约占屏宽 5%~6%，看着才透气。 */
   padding: 0 22px;
+  /* 必须加：默认 content-box 时，宽度 100% 再加上左右各 22px 内边距，
+     整个正文块比屏幕宽 44px。手指一横划就滑出去了，
+     看起来就是"左边被切掉、右边留一大片空白"。 */
+  box-sizing: border-box;
   line-height: 1.85;
+}
+
+/* 正文区禁止横向滚动：万一书里有超宽元素，宁可裁掉也不让整页左右滑动 */
+html.is-android .reader-content {
+  overflow-x: hidden;
+  touch-action: pan-y;
 }
 
 /* 正文对齐：图片 / 分割线与文字共用同一条左右边线。

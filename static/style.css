@@ -58,7 +58,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: -apple-system, "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC",
+               "Microsoft YaHei", "Segoe UI", sans-serif;
   transition: background 0.2s, color 0.2s;
 }
 
@@ -410,7 +411,12 @@ button {
   padding: 0 clamp(20px, 4vw, 48px);
   font-size: var(--reader-font-size, 19px);
   line-height: 1.9;
-  font-family: "PingFang SC Medium", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 字体顺序：苹果设备（Mac/iPad/iPhone）走「苹方」；Windows 没有苹方，
+     退到微软雅黑；安卓没有苹方也没有雅黑，退到系统自带的思源黑体
+     （Noto Sans CJK，和苹方同源于 Source Han Sans，字形基本一致）。
+     苹方是苹果私有字体，不能打包进 APK 分发，所以安卓这一档只能是思源。 */
+  font-family: "PingFang SC", "PingFang SC Medium", "Noto Sans CJK SC",
+               "Source Han Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   /* 两端对齐：不这么写，英文每行右边缘参差不齐（637/612/668…），
      看着像"没排好"。中文本来就该两端对齐。
      hyphens 只在浏览器认得 lang 时才断词，见 app.js 给 .inner 设的 lang。 */
@@ -521,7 +527,8 @@ body[data-theme="dark"] ::selection {
   font-size: 0.92em;
   line-height: 1.8;
   color: var(--text-soft);
-  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: -apple-system, "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC",
+               "Microsoft YaHei", "Segoe UI", sans-serif;
 }
 
 /* 章节分隔标题：原本用来在“连续滚动”时标出“新的一章从这里开始”。
