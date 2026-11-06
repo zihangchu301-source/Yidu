@@ -196,12 +196,18 @@ def create_app(cfg, static_folder: str | None = None,
             book_hash = compute_book_hash(tmp_path)
             book_dir = os.path.join(cfg.books_dir, book_hash)
 
-            # 已经导入过：直接返回（保证幂等）
+            # 已经导入过、而且正文文件确实在本机：直接返回（保证幂等）
             existing = store.get_book(book_hash)
-            if existing:
+            has_content = os.path.isfile(os.path.join(book_dir, "titles.json"))
+            if existing and has_content:
                 return jsonify({"book_hash": book_hash, "title": existing["title"],
                                 "already_exists": True})
 
+            # 走到这里有两种情况：
+            #   1) 全新导入
+            #   2) 书目记录是云端同步过来的（另一台设备导过），但 epub 正文没跟过来 ——
+            #      这时必须把文件补齐，否则「说导过了又打不开」。
+            #      注意：不覆盖旧的笔记 / 进度 / 阅读时长。
             data = parse_epub(tmp_path, book_hash)
 
             # ---- 落盘：章节、目录标题、图片、封面 ----
@@ -233,13 +239,21 @@ def create_app(cfg, static_folder: str | None = None,
             # ---- 登记数据库 ----
             # 语种：抽前 60 段正文判断中英文（中文书阅读器里不显示翻译入口）
             language = detect_language([s["text"] for s in data["segments"][:60]])
-            store.add_book(book_hash, data["title"], data["author"], cover_name,
-                           len(data["chapters"]), len(data["segments"]), language)
+            if existing:
+                # 云端同步过来的书目记录：只补封面（原来没有才补）和正文分段，
+                # 不动 added_at、笔记、进度、阅读时长。
+                if not existing.get("cover") and cover_name:
+                    store.set_book_cover(book_hash, cover_name)
+            else:
+                store.add_book(book_hash, data["title"], data["author"], cover_name,
+                               len(data["chapters"]), len(data["segments"]), language)
+            # INSERT OR IGNORE：已有的翻译结果不会被冲掉
             store.init_segments(book_hash, data["segments"])
 
             return jsonify({"book_hash": book_hash, "title": data["title"],
                             "chapters": len(data["chapters"]),
-                            "segments": len(data["segments"])})
+                            "segments": len(data["segments"]),
+                            "repaired": bool(existing)})
         except Exception as exc:
             return jsonify({"error": f"导入失败：{exc}"}), 500
         finally:
@@ -336,6 +350,14 @@ def create_app(cfg, static_folder: str | None = None,
         book_dir = os.path.join(cfg.books_dir, book_hash)
         html = get_chapter_html(book_dir, chapter_index)
         if html is None:
+            # 区别两种情况：书是真的没这一章，还是这本书的正文根本没下载到本机
+            # （书目记录是从云端同步过来的，epub 文件没跟过来 —— 见导入接口的说明）
+            if not os.path.isdir(book_dir):
+                return jsonify({
+                    "error": "这本书的正文还没下载到本机。请重新导入一次同一个 epub 文件，"
+                             "笔记和阅读进度会保留。",
+                    "need_file": True,
+                }), 409
             return jsonify({"error": "章节不存在。"}), 404
         return jsonify({
             "index": chapter_index,

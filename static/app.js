@@ -424,7 +424,14 @@ async function importEpubFile(file) {
     const form = new FormData();
     form.append("file", file);
     const data = await api("POST", "/api/books/import", form);
-    toast(data.already_exists ? "这本书已经导入过了" : `导入成功：${data.title}`);
+    if (data.already_exists) {
+      toast("这本书已经导入过了");
+    } else if (data.repaired) {
+      // 书目记录是从另一台设备同步过来的，这次导入只是把正文补到本机
+      toast(`已补上正文：${data.title}`);
+    } else {
+      toast(`导入成功：${data.title}`);
+    }
     loadBooks();
   } catch (err) {
     toast(err.message);

@@ -175,6 +175,17 @@ class Store:
                     updated_at TEXT
                 );
 
+                -- ⑧-b 阅读时长分设备记账
+                -- 为什么要分设备：reading time 是"这台设备上累计读了多少秒"，
+                -- 两台设备各读各的，直接相加会重复累加、取最大值又会丢掉另一台。
+                -- 所以每台设备认领自己那一格，展示时求和；同步时按设备取较大值合并。
+                CREATE TABLE IF NOT EXISTS read_time_dev (
+                    book_hash  TEXT NOT NULL,
+                    device_id  TEXT NOT NULL,
+                    seconds    INTEGER DEFAULT 0,
+                    PRIMARY KEY (book_hash, device_id)
+                );
+
                 -- ⑨ 同步记账：每条记录上次同步时的内容指纹 + 云端时间
                 -- 靠"指纹变了 = 本地改过"判断要不要上传，不用给每张业务表加列。
                 CREATE TABLE IF NOT EXISTS sync_meta (
@@ -233,6 +244,23 @@ class Store:
             self._conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_uid ON annotations(uid)"
             )
+            # 老库升级：以前只有 books.total_read_seconds 一个总数，
+            # 现在改成按设备记账。把历史总数认领给本机，否则第一次心跳
+            # 重算总分时会把以前读的时长清零。
+            # 条件里的 NOT EXISTS 保证只认领一次：一旦有了账本（本机的或同步来的）
+            # 就不再重复认领，避免把别的设备的时长算到自己头上。
+            self._conn.execute(
+                """
+                INSERT INTO read_time_dev (book_hash, device_id, seconds)
+                SELECT b.book_hash, ?, COALESCE(b.total_read_seconds, 0)
+                FROM books b
+                WHERE COALESCE(b.total_read_seconds, 0) > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM read_time_dev t WHERE t.book_hash = b.book_hash
+                  )
+                """,
+                (self.device_id(),),
+            )
             self._conn.commit()
 
     # ==================================================================
@@ -284,19 +312,100 @@ class Store:
             )
             self._conn.commit()
 
+    def device_id(self) -> str:
+        """
+        本机的一个稳定标识（首次调用时生成，存在 app_kv 里）。
+        只用来区分"这几秒时长是哪台设备读的"，不含任何个人信息。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM app_kv WHERE key = 'device_id'"
+            ).fetchone()
+            if row and row["value"]:
+                return json.loads(row["value"])
+            new_id = uuid.uuid4().hex[:12]
+            self._upsert(
+                "app_kv",
+                {"key": "device_id"},
+                {"value": json.dumps(new_id), "updated_at": _now()},
+            )
+            return new_id
+
+    def read_times_by_device(self, book_hash: str) -> dict:
+        """{device_id: seconds} —— 这本书在各设备上各读了多少。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT device_id, seconds FROM read_time_dev WHERE book_hash = ?",
+                (book_hash,),
+            ).fetchall()
+        return {r["device_id"]: int(r["seconds"] or 0) for r in rows}
+
+    def _recalc_total_read(self, book_hash: str) -> int:
+        """把 books.total_read_seconds 重算成各设备之和（调用方持锁）。"""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(seconds), 0) AS total FROM read_time_dev WHERE book_hash = ?",
+            (book_hash,),
+        ).fetchone()
+        total = int(row["total"] or 0)
+        self._conn.execute(
+            "UPDATE books SET total_read_seconds = ? WHERE book_hash = ?",
+            (total, book_hash),
+        )
+        return total
+
+    def merge_read_times(self, book_hash: str, remote: dict) -> None:
+        """
+        合并云端带来的「各设备时长」：同一设备取较大值（本机不会更小），
+        然后把总分重算。两台设备交替阅读时总时长 = 两边之和，正是想要的。
+        """
+        if not isinstance(remote, dict) or not remote:
+            return
+        with self._lock:
+            for dev, secs in remote.items():
+                try:
+                    secs = int(secs or 0)
+                except (TypeError, ValueError):
+                    continue
+                if secs <= 0 or not isinstance(dev, str):
+                    continue
+                row = self._conn.execute(
+                    "SELECT seconds FROM read_time_dev WHERE book_hash = ? AND device_id = ?",
+                    (book_hash, dev),
+                ).fetchone()
+                if row and int(row["seconds"] or 0) >= secs:
+                    continue
+                self._upsert(
+                    "read_time_dev",
+                    {"book_hash": book_hash, "device_id": dev},
+                    {"seconds": secs},
+                )
+            self._recalc_total_read(book_hash)
+
+    def set_book_cover(self, book_hash: str, cover: str) -> None:
+        """补一本书的封面文件名（同步过来的书没有封面，导入正文时补上）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE books SET cover = ? WHERE book_hash = ?", (cover, book_hash)
+            )
+
     def add_read_seconds(self, book_hash: str, seconds: int) -> None:
         """给一本书的阅读时长累加秒数（前端每 30 秒心跳上报一次）。"""
         if seconds <= 0:
             return
         with self._lock:
-            self._conn.execute(
-                """
-                UPDATE books
-                SET total_read_seconds = COALESCE(total_read_seconds, 0) + ?
-                WHERE book_hash = ?
-                """,
-                (seconds, book_hash),
+            # 先记到本设备的账本上，再按"各设备之和"刷新总分
+            me = self.device_id()
+            row = self._conn.execute(
+                "SELECT seconds FROM read_time_dev WHERE book_hash = ? AND device_id = ?",
+                (book_hash, me),
+            ).fetchone()
+            mine = int(row["seconds"] or 0) if row else 0
+            self._upsert(
+                "read_time_dev",
+                {"book_hash": book_hash, "device_id": me},
+                {"seconds": mine + seconds},
             )
+            self._recalc_total_read(book_hash)
             self._conn.commit()
 
     def total_read_seconds(self) -> int:
@@ -803,6 +912,8 @@ class Store:
                         "seg_count": r["seg_count"],
                         "language": r["language"],
                         "added_at": r["added_at"],
+                        # 各设备各读了多少秒：合并规则是"按设备取较大值"，见 merge_read_times
+                        "read_times": self.read_times_by_device(r["book_hash"]),
                     },
                     "updated_at": r["added_at"] or _now(),
                 })
@@ -850,6 +961,10 @@ class Store:
                     "updated_at": r["looked_at"] or _now(),
                 })
             for r in self._conn.execute("SELECT * FROM app_kv").fetchall():
+                # device_id 是本机的身份，绝不能同步 ——
+                # 一旦同步出去，两台的设备会共用一个 id，阅读时长就串账了。
+                if r["key"] == "device_id":
+                    continue
                 try:
                     value = json.loads(r["value"])
                 except (ValueError, TypeError):
@@ -904,19 +1019,24 @@ class Store:
         payload = payload or {}
         with self._lock:
             if kind == "book":
-                self._upsert(
-                    "books",
-                    {"book_hash": key},
-                    {
-                        "title": payload.get("title"),
-                        "author": payload.get("author"),
-                        "cover": None,
-                        "chapter_count": payload.get("chapter_count"),
-                        "seg_count": payload.get("seg_count"),
-                        "language": payload.get("language"),
-                        "added_at": payload.get("added_at") or _now(),
-                    },
-                )
+                # 封面文件名只在本机有效（图片不参与同步），
+                # 所以更新时**不能**带上 cover，否则会把本地已有的封面清空。
+                exists = self._conn.execute(
+                    "SELECT 1 FROM books WHERE book_hash = ?", (key,)
+                ).fetchone()
+                fields = {
+                    "title": payload.get("title"),
+                    "author": payload.get("author"),
+                    "chapter_count": payload.get("chapter_count"),
+                    "seg_count": payload.get("seg_count"),
+                    "language": payload.get("language"),
+                    "added_at": payload.get("added_at") or _now(),
+                }
+                if not exists:
+                    fields["cover"] = None
+                self._upsert("books", {"book_hash": key}, fields)
+                # 阅读时长：把云端各设备的账本并进来，再重算总分
+                self.merge_read_times(key, payload.get("read_times") or {})
             elif kind == "progress":
                 self._upsert(
                     "reading_progress",
@@ -958,6 +1078,10 @@ class Store:
                     },
                 )
             elif kind == "setting":
+                # 防御：早期版本可能把 device_id 当设置传上去了，
+                # 这里拒收，免得两台设备共用一个设备 id 把阅读时长记混。
+                if key == "device_id":
+                    return
                 self._upsert(
                     "app_kv",
                     {"key": key},
