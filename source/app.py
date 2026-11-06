@@ -64,12 +64,31 @@ def _port_open(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+def _http_ready(host: str, port: int, timeout: float = 2.0) -> bool:
+    """
+    端口通 ≠ 服务活着。
+
+    踩过的坑（2026-11-06）：上一个实例正在退出，5000 端口还没释放，
+    新实例一探测"端口开着"就以为有人在跑，于是自己不启动服务、直接开窗口 ——
+    上一秒旧进程彻底没了，窗口就成了「127.0.0.1 拒绝连接」。
+    所以必须真的发一次 HTTP 请求，拿到 200 才算服务在位。
+    """
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+            f"http://{host}:{port}/api/books", timeout=timeout
+        ) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def _wait_server(host: str, port: int, timeout: float = 15.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _port_open(host, port):
+        if _port_open(host, port) and _http_ready(host, port, timeout=1.0):
             return True
-        time.sleep(0.2)
+        time.sleep(0.25)
     return False
 
 
@@ -252,19 +271,31 @@ def main() -> int:
     if getattr(sys, "frozen", False):
         _ensure_static_in_base()
 
-    url = f"http://{cfg.host}:{cfg.port}"
+    # ---- 端口被占用：先确认真的是我们的服务在应答，再决定复用 ----
+    # 只探测端口会被"上一个实例正在退出"骗到（端口还没释放但已经没人应答），
+    # 那样新实例不启动服务、窗口直接打开，就会白屏一句"拒绝连接"。
+    already_running = _http_ready(cfg.host, cfg.port)
 
-    # ---- 端口被占用：说明已有实例在跑，直接复用 ----
-    already_running = _port_open(cfg.host, cfg.port)
+    port = cfg.port
+    if not already_running and _port_open(cfg.host, cfg.port):
+        # 端口有人占着但不应答（多半是上一个实例没退干净）：
+        # 往后找一个空端口，别在这儿干等 15 秒然后失败退出。
+        for cand in range(cfg.port + 1, cfg.port + 20):
+            if not _port_open(cfg.host, cand):
+                port = cand
+                print(f"[提示] {cfg.port} 被占用且无响应，改用 {port}", file=sys.stderr)
+                break
+
+    url = f"http://{cfg.host}:{port}"
 
     if not already_running:
         t = threading.Thread(
-            target=lambda: app.run(host=cfg.host, port=cfg.port,
+            target=lambda: app.run(host=cfg.host, port=port,
                                    debug=False, threaded=True, use_reloader=False),
             daemon=True,
         )
         t.start()
-        if not _wait_server(cfg.host, cfg.port):
+        if not _wait_server(cfg.host, port):
             print("[启动失败] 服务未能启动", file=sys.stderr)
             return 1
 
