@@ -161,6 +161,12 @@
         inside("#sel-toolbar") || inside("#bubble") || inside("#note-bubble") ||
         inside("#tts-bar") || inside(".back-panel")) return;
 
+    // 正文里的注释角标（红楼梦那种蓝色 [1]）、外链、图片：点它们是"要内容"，
+    // 不是"唤出工具栏"。以前每次点注释都顺手把底部栏弹出来，很碍事。
+    // 这些交互由正文自己的 click 处理（弹注释气泡 / 拦掉无效跳转）。
+    if (inside(".reader-content a") || inside(".reader-content sup") ||
+        inside(".reader-content img")) return;
+
     setReaderChrome(!body.classList.contains("reader-chrome-open"));
   }, { passive: true });
 
