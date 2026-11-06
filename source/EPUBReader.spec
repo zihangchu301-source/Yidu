@@ -7,10 +7,14 @@ a = Analysis(
     binaries=[],
     datas=[
         ('templates', 'templates'),
-        ('static/app.js', 'static'),
-        ('static/style.css', 'static'),
-        ('static/brand.png', 'static'),
-        ('icon.ico', '.'),
+        # 前端只认仓库根的 static/（桌面和安卓共用一份）。
+        # 以前这里写的是 source/static/，那份副本早就过期了 ——
+        # exe 启动时 _ensure_static_in_base() 会拿它覆盖运行目录的 static/，
+        # 结果是"改了前端，一开 exe 又被打回旧版"。
+        ('../static/app.js', 'static'),
+        ('../static/style.css', 'static'),
+        ('../static/brand.png', 'static'),
+        ('../icon.ico', '.'),
     ],
     hiddenimports=[],
     hookspath=[],

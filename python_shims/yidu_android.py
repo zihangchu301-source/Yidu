@@ -26,6 +26,22 @@ import time
 
 DEFAULT_PORT = 8720
 
+# ----------------------------------------------------------------------
+# 预置的云端地址与 anon key
+# ----------------------------------------------------------------------
+# 为什么可以直接写死在源码里：
+#   anon key 是 Supabase 专门设计成「可公开」的密钥，它只能做数据库行级安全
+#   策略（RLS）允许的事 —— 没有登录令牌的话，读到的永远是空数组。
+#   真正的权限边界在 policies 上，见 docs/supabase_schema.sql。
+#   预置在这里，用户装完 App 打开就能直接登录，不用手抄 200 多个字符。
+#
+# 绝对不能出现在本文件里的两样东西：
+#   1. service_role key（绕过所有 RLS，等于数据库超级权限）
+#   2. 数据库密码（postgres 账号的密码）
+#   它们只存在 state/cloud-credentials.txt（已 gitignore）。
+_CLOUD_URL = "https://spb-c8q8ryx5q2hgmctu.supabase.opentrust.net"
+_CLOUD_ANON_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiIsInJlZiI6InNwYi1jOHE4cnl4NXEyaGdtY3R1IiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3OTM5NDQ5MDQsImV4cCI6MjEwOTUyMDkwNH0.SEAAMDU3wz_8Vnmn90PbiaFCvB38x9MWTFzCfdDW8xQ"
+
 _DEFAULT_CONFIG = """; 译读 · 英文阅读器（安卓版）配置文件
 ; API Key 可以稍后在 App 里的「设置」面板填写，也可以直接编辑本文件
 
@@ -54,26 +70,63 @@ default_font_size = 19
 default_theme = dark
 
 [cloud]
-; ---- 账号与云端同步（留空也能正常读书，只是不能跨设备同步）----
-; 去 Supabase 后台 → Project Settings → API 复制这两个值填进来
-; 只填 anon / public key，不要填 service_role key
-supabase_url      =
-supabase_anon_key =
+; 账号与云端同步（已预置，一般不用改）
+supabase_url      = __URL__
+supabase_anon_key = __KEY__
 sync_enabled      = true
-"""
+""".replace("__URL__", _CLOUD_URL).replace("__KEY__", _CLOUD_ANON_KEY)
 
-# 老版本的 config.ini 没有 [cloud] 段：补一段空白的上去，
-# 否则用户想开同步却找不到可以填的地方。
+# 老版本的 config.ini 没有 [cloud] 段：补一段上去（已带默认值）
 _CLOUD_SECTION = """
 [cloud]
-; ---- 账号与云端同步（留空也能正常读书，只是不能跨设备同步）----
-; 去 Supabase 后台 → Project Settings → API 复制这两个值填进来
-; 只填 anon / public key，不要填 service_role key
-; 国内建议用阿里云的 Supabase 兼容实例（杭州节点，比官方新加坡快很多）
-supabase_url      =
-supabase_anon_key =
+; 账号与云端同步（已预置，一般不用改）
+supabase_url      = __URL__
+supabase_anon_key = __KEY__
 sync_enabled      = true
-"""
+""".replace("__URL__", _CLOUD_URL).replace("__KEY__", _CLOUD_ANON_KEY)
+
+
+def _fill_cloud_defaults(path: str) -> None:
+    """
+    老版本升级上来时，config.ini 里 [cloud] 段的两行是空的 —— 把预置值填进去。
+
+    为什么必须做：手机用户看不到 config.ini（在应用私有目录），
+    让他手抄一个 208 字符的 anon key 是不现实的。填完这里，
+    打开 App 直接就是「填邮箱密码登录」，不用碰这些技术参数。
+
+    只填空值，用户自己填过的一律不动。
+    """
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return
+
+    changed = False
+    in_cloud = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_cloud = stripped == "[cloud]"
+            continue
+        if not in_cloud or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        name = name.strip()
+        if not value.strip():
+            if name == "supabase_url":
+                lines[i] = "supabase_url      = " + _CLOUD_URL + "\n"
+                changed = True
+            elif name == "supabase_anon_key":
+                lines[i] = "supabase_anon_key = " + _CLOUD_ANON_KEY + "\n"
+                changed = True
+
+    if changed:
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
+        except OSError:
+            pass
 
 
 def _prepare_home(home: str) -> None:
@@ -96,6 +149,9 @@ def _prepare_home(home: str) -> None:
                     fh.write(_CLOUD_SECTION)
         except OSError:
             pass
+
+    # 老配置里 [cloud] 两行为空 → 填预置值（手机上用户改不了文件）
+    _fill_cloud_defaults(config_path)
 
     for must in ("static/app.js", "templates/index.html"):
         if not os.path.isfile(os.path.join(home, must)):

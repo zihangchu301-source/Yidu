@@ -218,19 +218,20 @@
     <div id="account-box" class="account-box">
       <div id="account-unconfigured" hidden>
         <p class="setting-hint">
-          第一次使用先填下面两项（Supabase 后台 → Project Settings → API）。
-          地址和密钥只存在本机 config.ini 里，不会上传到别处。
+          这台设备还没连上云端。<b>正常情况下不用管这一块</b> —— 升级到最新版会自动带出地址和密钥。
+          只有拿到的安装包是「干净版」时才需要手动填下面两项。
         </p>
         <div class="setting-row">
-          <span>项目地址</span>
+          <span>云端地址</span>
           <input id="cloud-url" class="setting-input" type="url"
                  placeholder="https://xxxx.supabase.co" autocomplete="off">
         </div>
         <div class="setting-row">
           <span>anon key</span>
           <input id="cloud-key" class="setting-input" type="password"
-                 placeholder="eyJhbGciOi…（不是 service_role）" autocomplete="off">
+                 placeholder="一长串字母，eyJ 开头" autocomplete="off">
         </div>
+        <p class="setting-hint">两个值都在云端后台 → Project Settings → API 里，整段复制粘贴即可。</p>
         <p id="cloud-msg" class="setting-hint account-msg"></p>
         <div class="setting-actions">
           <button id="cloud-save" class="btn-primary">保存并启用同步</button>
@@ -239,7 +240,7 @@
 
       <div id="account-logged-out" hidden>
         <p class="setting-hint">
-          登录后，书库、阅读进度、笔记划线、查词记录会跟着账号走 —— 换手机不用重新导书，也不用再翻到上次那页。
+          登录后，书库、阅读进度、笔记划线、查词记录会跟着账号走 —— 换手机不用重新导书，也不用再翻到上次那一页。
         </p>
         <div class="setting-row">
           <span>邮箱</span>
@@ -252,6 +253,7 @@
                  placeholder="至少 6 位" autocomplete="current-password">
         </div>
         <p id="account-msg" class="setting-hint account-msg"></p>
+        <p class="setting-hint">还没有账号就点「注册新账号」；邮箱只要你能记住就行，不需要真的能收信。</p>
         <div class="setting-actions">
           <button id="account-register" class="btn-text">注册新账号</button>
           <button id="account-login" class="btn-primary">登录</button>
@@ -265,6 +267,7 @@
             <span id="account-email-shown" class="account-email">—</span>
           </div>
         </div>
+        <p class="setting-hint">登录成功后会自动同步一次，不用再点按钮。想立刻对齐就点「立即同步」。</p>
         <p id="account-sync-msg" class="setting-hint account-msg"></p>
         <div class="setting-actions">
           <button id="account-logout" class="btn-text">退出登录</button>

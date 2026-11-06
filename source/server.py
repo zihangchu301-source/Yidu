@@ -750,6 +750,8 @@ def create_app(cfg, static_folder: str | None = None,
         url = (body.get("url") or "").strip().rstrip("/")
         key = (body.get("key") or "").strip()
         if not url.startswith(("http://", "https://")):
+            if "@" in url and "." in url:
+                return jsonify({"error": "这里要填的是云端地址（https:// 开头），不是邮箱。邮箱填在下面的「邮箱」框里。"}), 400
             return jsonify({"error": "地址要以 http:// 或 https:// 开头（形如 https://xxx.supabase.co）。"}), 400
         if not key:
             return jsonify({"error": "请填写 anon / public key。"}), 400

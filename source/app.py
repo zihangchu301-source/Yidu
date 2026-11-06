@@ -23,7 +23,6 @@ app.py —— 桌面 App 入口（PyInstaller 打包用）
 
 from __future__ import annotations
 
-import filecmp
 import os
 import shutil
 import socket
@@ -75,10 +74,13 @@ def _wait_server(host: str, port: int, timeout: float = 15.0) -> bool:
 
 
 def _ensure_static_in_base() -> None:
-    """exe 模式下，把只读资源里的 css/js/图标同步到 exe 旁的 static 目录。
+    """exe 模式下，补齐 exe 旁 static 目录里缺失的 css/js/图标。
 
-    这里**不能**只在“文件不存在”时复制：旧版本装过一次之后，static/app.js
-    永远存在，新 exe 里的界面就永远更新不到。用 filecmp 比对内容，不一致才覆盖。
+    只补「不存在」的，**绝不覆盖已存在的**。
+    原因（2026-11-06 踩过）：以前是拿打包内的文件和运行目录比对、不一致就覆盖。
+    但仓库并到 D:\\EPUBReader 之后，运行目录的 static/ 就是唯一正本，
+    手工改过的 app.js 会被 exe 里的旧副本打回原样 —— 看起来就像"改了前端没生效"。
+    现在缺文件才补，改过的文件永远不会被动。
     """
     base = _base_dir()
     res = _resource_dir()
@@ -87,13 +89,12 @@ def _ensure_static_in_base() -> None:
     for name in ("app.js", "style.css", "brand.png"):
         dst = os.path.join(static_base, name)
         src = os.path.join(res, "static", name)
-        if not os.path.isfile(src):
+        if not os.path.isfile(src) or os.path.isfile(dst):
             continue
         try:
-            if not os.path.isfile(dst) or not filecmp.cmp(src, dst, shallow=False):
-                shutil.copy2(src, dst)
+            shutil.copy2(src, dst)
         except OSError as exc:
-            print(f"[提示] 更新 static/{name} 失败：{exc}", file=sys.stderr)
+            print(f"[提示] 补 static/{name} 失败：{exc}", file=sys.stderr)
 
 
 # ----------------------------------------------------------------------
