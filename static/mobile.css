@@ -59,6 +59,21 @@ html.is-android .reader-content .inner hr {
   border-top: 1px solid var(--border);
 }
 
+/* 电子书常用 <p> </p>（只有空格 / &nbsp;）来"空一行"。
+   这种空段自带行高（1.85 × 字号）+ 下边距，和真段落叠成一大块空白，
+   段的距离忽大忽小 —— 看起来就是排版不整齐。
+   app.js 渲染时会给它们加 .p-blank 标记（不删节点，避免打乱 .seg 序号），
+   这里把占位高度彻底压平；段落间距统一由 .inner p 的下边距控制。
+   只在安卓生效，桌面版一个像素都不动。 */
+html.is-android .reader-content .inner p.p-blank {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  height: 0 !important;
+  overflow: hidden;
+}
+
 /* ---------- 一、书架 ---------- */
 html.is-android .shelf-header {
   flex-wrap: wrap;

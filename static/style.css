@@ -414,35 +414,6 @@ button {
 }
 .reader-content p { margin: 0 0 1.1em; }
 .reader-content img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-
-/* 正文里的图片 / 分割线：宽度永远跟着文字栏走 —— 不溢出、不贴边，
-   几本书之间也不会一张宽一张窄。 */
-.reader-content .inner img,
-.reader-content .inner picture,
-.reader-content .inner svg,
-.reader-content .inner video {
-  display: block;
-  max-width: 100%;
-  width: auto;
-  height: auto;
-  margin: 1.3em auto;
-  border-radius: 6px;
-}
-.reader-content .inner hr {
-  margin: 1.7em 0;
-  border: 0;
-  border-top: 1px solid var(--border);
-}
-/* 电子书里用 <p> </p> 占位"空一行"的，app.js 会给它加上 .p-blank。
-   它自带行高 + 下边距，和真段落叠起来就是一大块空白，
-   段的距离忽大忽小 —— 看起来就是"排版不整齐"。这里把它压平。 */
-.reader-content .inner p.p-blank {
-  margin: 0;
-  line-height: 0;
-  font-size: 0;
-  height: 0;
-  overflow: hidden;
-}
 .reader-content h1, .reader-content h2, .reader-content h3 { line-height: 1.5; }
 
 /* 可翻译文本节点：被 app.js 包裹成 span.seg */

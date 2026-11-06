@@ -1112,14 +1112,15 @@ function makeChapterSection(index, data) {
   inner.innerHTML = data.html || "";
 
   // 电子书里经常用 <p> </p>（只有空格或 &nbsp;）来"空一行"。
-  // 这种空段自己带上下外边距，和真正的段落叠在一起，
-  // 段的距离就忽大忽小 —— 看起来就是"排版不整齐"。
-  // 不删节点（会打乱 .seg 的序号），只打个标记把它压平，
-  // 段落间距统一交给 CSS 控制。
-  inner.querySelectorAll("p").forEach((p) => {
-    if (p.querySelector("img, svg, picture, video, iframe")) return;
-    if (p.textContent.replace(/[\s\u00a0]/g, "") === "") p.classList.add("p-blank");
-  });
+  // 这种空段自带行高 + 下边距，和真段落叠起来，段距就忽大忽小。
+  // 只在安卓端处理：打个 .p-blank 标记交给 mobile.css 压平
+  // （不删节点，避免打乱 .seg 的序号）。桌面版排版一点不动。
+  if (IS_ANDROID) {
+    inner.querySelectorAll("p").forEach((p) => {
+      if (p.querySelector("img, svg, picture, video, iframe")) return;
+      if (p.textContent.replace(/[\s\u00a0]/g, "") === "") p.classList.add("p-blank");
+    });
+  }
 
   // 章内注释角标（如《红楼梦》的 [1]）：点击不跳转，弹出注释内容气泡。
   // 角标 <a href="本章.html#mN"> 与注释 <a id="mN"> 在同一段 HTML 里，
