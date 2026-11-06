@@ -52,6 +52,27 @@ auto_open_browser = false
 [ui]
 default_font_size = 19
 default_theme = dark
+
+[cloud]
+; ---- 账号与云端同步（留空也能正常读书，只是不能跨设备同步）----
+; 去 Supabase 后台 → Project Settings → API 复制这两个值填进来
+; 只填 anon / public key，不要填 service_role key
+supabase_url      =
+supabase_anon_key =
+sync_enabled      = true
+"""
+
+# 老版本的 config.ini 没有 [cloud] 段：补一段空白的上去，
+# 否则用户想开同步却找不到可以填的地方。
+_CLOUD_SECTION = """
+[cloud]
+; ---- 账号与云端同步（留空也能正常读书，只是不能跨设备同步）----
+; 去 Supabase 后台 → Project Settings → API 复制这两个值填进来
+; 只填 anon / public key，不要填 service_role key
+; 国内建议用阿里云的 Supabase 兼容实例（杭州节点，比官方新加坡快很多）
+supabase_url      =
+supabase_anon_key =
+sync_enabled      = true
 """
 
 
@@ -65,6 +86,16 @@ def _prepare_home(home: str) -> None:
     if not os.path.isfile(config_path):
         with open(config_path, "w", encoding="utf-8") as fh:
             fh.write(_DEFAULT_CONFIG)
+    else:
+        # 升级上来的老配置：补上后来新增的段落（只补缺的，不改已有内容）
+        try:
+            with open(config_path, "r", encoding="utf-8-sig") as fh:
+                text = fh.read()
+            if "[cloud]" not in text:
+                with open(config_path, "a", encoding="utf-8") as fh:
+                    fh.write(_CLOUD_SECTION)
+        except OSError:
+            pass
 
     for must in ("static/app.js", "templates/index.html"):
         if not os.path.isfile(os.path.join(home, must)):

@@ -94,6 +94,11 @@ const apiGet = (url) => api("GET", url);
 const apiPost = (url, body) => api("POST", url, body || {});
 const apiDelete = (url) => api("DELETE", url);
 
+// 后端数据库里的阅读进度（{book_hash: {chapter_index, ...}}）。
+// 启动时拉一次；浏览器 localStorage 只是它的缓存，真正能跨设备的是这份。
+let progressCache = {};
+let cloudState = { logged_in: false, configured: false, email: "" };
+
 /** 轻提示（2 秒后自动消失）。 */
 let toastTimer = null;
 function toast(msg) {
@@ -964,7 +969,12 @@ async function openBook(book) {
   } catch (err) {
     state.chapters = [{ index: 0, title: "正文" }];
   }
-  const saved = parseInt(localStorage.getItem(`progress:${book.book_hash}`) || "0", 10);
+  // 进度来源优先级：后端数据库（可同步、换设备能续读）→ localStorage（老版本迁过来的）
+  const remote = progressCache[book.book_hash];
+  const fromDb = remote && Number.isInteger(remote.chapter_index) ? remote.chapter_index : null;
+  const saved = fromDb !== null
+    ? fromDb
+    : parseInt(localStorage.getItem(`progress:${book.book_hash}`) || "0", 10);
   const startIndex = Math.min(saved || 0, Math.max(0, state.chapters.length - 1));
 
   // 清掉上一本书残留的缓存，从上次读到的章节开始加载
@@ -1290,7 +1300,24 @@ function updateCurrentChapterUI() {
   state.chapterIndex = ci;
 
   readerTitle.textContent = (state.chapters[ci] && state.chapters[ci].title) || state.book.title;
-  localStorage.setItem(`progress:${state.book.book_hash}`, String(ci));
+
+  // 只在章节真的变了才写，避免每滚动一次就写一次 localStorage（滚动掉帧的老原因）
+  if (ci !== state.lastSavedChapter) {
+    state.lastSavedChapter = ci;
+    localStorage.setItem(`progress:${state.book.book_hash}`, String(ci));
+    queueProgressSave(state.book.book_hash, ci);
+  }
+}
+
+// 阅读进度落库（供云端同步 / 换设备续读）。
+// 防抖 1.5 秒：连续滚动时只在停下来的那一刻发一次请求。
+let progressSaveTimer = null;
+function queueProgressSave(bookHash, chapterIndex) {
+  clearTimeout(progressSaveTimer);
+  progressSaveTimer = setTimeout(() => {
+    apiPost(`/api/books/${bookHash}/progress`, { chapter_index: chapterIndex })
+      .catch(() => {});   // 存进度失败不该打扰阅读
+  }, 1500);
 }
 
 /* ---- 沉浸式顶部栏：平时隐藏，鼠标移到窗口最顶部才滑出 + 「更多」菜单 + 全屏按钮 ---- */
@@ -2034,6 +2061,7 @@ function setLangMode(mode) {
   state.langMode = mode;
   savedLangMode = mode; // 记住英文书的显示模式（中文书会强制原文，不走这里）
   localStorage.setItem("reader:langMode", mode); // 记住选择，下次打开还是这个模式
+  queuePref("langMode", mode);                   // 同时存进数据库，跟着账号走
 
   syncLangSwitch(); // 刷新顶部三段控件的选中态
   // 「朗读」只读英文原文：切到「中文」显示时把选字栏里的按钮藏起来
@@ -2858,6 +2886,51 @@ document.querySelectorAll(".modal").forEach((modal) => {
   });
 });
 
+/* ---- 界面偏好：本地立刻生效，同时异步存进数据库（跟着账号同步） ---- */
+// 只存真正需要跨设备的项：字号 / 主题 / 显示语言。
+// 主题还是以 config.ini 为准（首屏由后端直接渲染，不闪白），这里只做同步搬运。
+let prefsPending = {};
+let prefsTimer = null;
+let prefsRestoring = false;   // 从后端恢复时不要回写，否则每次启动都白跑一趟请求
+
+function queuePref(key, value) {
+  if (prefsRestoring) return;
+  prefsPending[key] = value;
+  clearTimeout(prefsTimer);
+  prefsTimer = setTimeout(() => {
+    const payload = prefsPending;
+    prefsPending = {};
+    apiPost("/api/prefs", payload).catch(() => {});
+  }, 800);
+}
+
+/** 启动 / 同步后从后端恢复偏好：换设备、清了缓存也能还原。 */
+async function restorePrefs() {
+  let prefs;
+  try {
+    prefs = await apiGet("/api/prefs");
+  } catch (err) {
+    return;
+  }
+  if (!prefs || typeof prefs !== "object") return;
+
+  const nextFont = parseInt(prefs.fontSize, 10);
+  const nextLang = ["en", "dual", "zh"].includes(prefs.langMode) ? prefs.langMode : "";
+
+  prefsRestoring = true;
+  try {
+    if (Number.isFinite(nextFont) && nextFont !== currentFontSize) {
+      applyFontSize(nextFont);
+    }
+    if (nextLang && nextLang !== savedLangMode) {
+      savedLangMode = nextLang;
+      setLangMode(nextLang);
+    }
+  } finally {
+    prefsRestoring = false;
+  }
+}
+
 // ---- 字号 ----
 let currentFontSize = parseInt(document.body.dataset.fontSize || "19", 10);
 const savedFont = localStorage.getItem("reader:fontSize");
@@ -2868,6 +2941,7 @@ function applyFontSize(size) {
   document.documentElement.style.setProperty("--reader-font-size", `${currentFontSize}px`);
   $("font-value").textContent = currentFontSize;
   localStorage.setItem("reader:fontSize", String(currentFontSize));
+  queuePref("fontSize", currentFontSize);
 }
 $("font-plus").onclick = () => applyFontSize(currentFontSize + 1);
 $("font-minus").onclick = () => applyFontSize(currentFontSize - 1);
@@ -3976,6 +4050,146 @@ function rangeFromOffsets(root, start, end) {
   return range;
 }
 
+/* ============================ 账号与云端同步 ============================ */
+function setAccountMsg(el, text, isError) {
+  if (!el) return;
+  el.textContent = text || "";
+  el.classList.toggle("is-error", Boolean(isError));
+}
+
+/** 按当前状态切换三块面板：未配置 / 未登录 / 已登录 */
+function renderAccount() {
+  const box = $("account-box");
+  // sync_enabled = false：整块收起来（有些用户只在本机用，不想看到账号入口）
+  if (cloudState && cloudState.enabled === false) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const configured = Boolean(cloudState.configured);
+  const loggedIn = Boolean(cloudState.logged_in);
+  $("account-unconfigured").hidden = configured;
+  $("account-logged-out").hidden = !configured || loggedIn;
+  $("account-logged-in").hidden = !configured || !loggedIn;
+  if (loggedIn) $("account-email-shown").textContent = cloudState.email || "已登录";
+}
+
+async function refreshAccount() {
+  try {
+    cloudState = await apiGet("/api/cloud/status");
+  } catch (err) {
+    cloudState = { logged_in: false, configured: false, email: "" };
+  }
+  renderAccount();
+}
+
+/** 按钮点下去先禁用，避免连点发两个请求 */
+async function withBusy(ids, fn) {
+  const els = ids.map((id) => $(id)).filter(Boolean);
+  els.forEach((el) => { el.disabled = true; });
+  try {
+    return await fn();
+  } finally {
+    els.forEach((el) => { el.disabled = false; });
+  }
+}
+
+/** 同步一趟，并刷新界面上的数据和进度缓存 */
+async function runSync(full = false) {
+  const msg = cloudState.logged_in ? $("account-sync-msg") : $("account-msg");
+  setAccountMsg(msg, "正在同步…");
+  try {
+    const res = await apiPost("/api/cloud/sync", { full });
+    setAccountMsg(msg, res.message || "同步完成。");
+    toast("同步完成");
+    await loadBooks();
+    try {
+      progressCache = (await apiGet("/api/progress")) || {};
+    } catch (err) { /* 进度刷新失败不影响主流程 */ }
+    await restorePrefs();
+  } catch (err) {
+    setAccountMsg(msg, err.message, true);
+  }
+}
+
+function bindAccountUI() {
+  // 还没配置云端：在界面里直接填（安卓版摸不到 config.ini，只能这样）
+  $("cloud-save").onclick = () => withBusy(["cloud-save"], async () => {
+    const msg = $("cloud-msg");
+    const url = $("cloud-url").value.trim();
+    const key = $("cloud-key").value.trim();
+    if (!url || !key) {
+      setAccountMsg(msg, "地址和密钥都要填。", true);
+      return;
+    }
+    setAccountMsg(msg, "正在保存…");
+    try {
+      cloudState = await apiPost("/api/cloud/config", { url, key });
+      setAccountMsg(msg, "");
+      $("cloud-key").value = "";
+      renderAccount();
+      toast("云端已启用");
+    } catch (err) {
+      setAccountMsg(msg, err.message, true);
+    }
+  });
+
+  $("account-login").onclick = () => withBusy(["account-login", "account-register"], async () => {
+    const msg = $("account-msg");
+    const email = $("account-email").value.trim();
+    const password = $("account-password").value;
+    if (!email || !password) {
+      setAccountMsg(msg, "邮箱和密码都要填。", true);
+      return;
+    }
+    setAccountMsg(msg, "正在登录…");
+    try {
+      cloudState = await apiPost("/api/cloud/login", { email, password });
+      $("account-password").value = "";
+      setAccountMsg(msg, "");
+      renderAccount();
+      await runSync();
+    } catch (err) {
+      setAccountMsg(msg, err.message, true);
+    }
+  });
+
+  $("account-register").onclick = () => withBusy(["account-login", "account-register"], async () => {
+    const msg = $("account-msg");
+    const email = $("account-email").value.trim();
+    const password = $("account-password").value;
+    if (!email || !password) {
+      setAccountMsg(msg, "邮箱和密码都要填。", true);
+      return;
+    }
+    setAccountMsg(msg, "正在注册…");
+    try {
+      cloudState = await apiPost("/api/cloud/register", { email, password });
+      $("account-password").value = "";
+      setAccountMsg(msg, "");
+      renderAccount();
+      toast("注册成功");
+      await runSync();
+    } catch (err) {
+      setAccountMsg(msg, err.message, true);
+    }
+  });
+
+  $("account-logout").onclick = () => withBusy(["account-logout", "account-sync"], async () => {
+    const msg = $("account-sync-msg");
+    try {
+      cloudState = await apiPost("/api/cloud/logout");
+      setAccountMsg(msg, "");
+      renderAccount();
+      toast("已退出登录");
+    } catch (err) {
+      setAccountMsg(msg, err.message, true);
+    }
+  });
+
+  $("account-sync").onclick = () => withBusy(["account-sync", "account-logout"], () => runSync());
+}
+
 /* ============================ 启动 ============================ */
 applyFontSize(currentFontSize);
 
@@ -3999,4 +4213,11 @@ readerView.classList.toggle("single-chapter", state.singleChapter);
 syncSingleChapterUI();
 
 loadBooks();
-loadBooks();
+
+// ---- 账号 / 进度 / 偏好：异步补齐，任何一项失败都不影响先读书 ----
+bindAccountUI();
+refreshAccount();
+apiGet("/api/progress")
+  .then((p) => { progressCache = p || {}; })
+  .catch(() => {});
+restorePrefs();

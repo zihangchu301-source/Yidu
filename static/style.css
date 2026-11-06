@@ -15,13 +15,13 @@
   --text-soft: #8a8a8a;      /* 次要文字 */
   --border: #e5e5e5;         /* 分割线 */
   --accent: #07c160;         /* 主色（微信绿） */
-  --highlight: #f0e4c6;      /* 划线底色：柔和米黄，不刺眼 */
+  --highlight: #d6e6f5;      /* 划线底色：淡蓝 */
   --note: #3a7ab8;           /* 注释色（浅色背景上用偏深的蓝才看得清） */
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   /* 阅读区的「提示色」统一走低饱和中性色，不用系统默认的亮蓝 / 主色亮绿：
      刺眼、和正文抢注意力。选区与朗读高亮直接写在各自规则里（高亮伪元素
      对自定义变量的支持各家不一致），这里只放普通规则要用的两个变量。 */
-  --quote-line: #d3d8d2;                     /* 对照模式译文左侧竖线 */
+  --quote-line: #b0cbe4;                     /* 对照模式译文左侧竖线 */
   /* 顶部栏 / 翻译进度条高度：正文区按这两个值预留顶部空间，
      这样顶栏“滑出/收起”时正文不会跟着上下移动（见 .reader-content 的 padding-top） */
   --reader-chrome-h: 53px;
@@ -35,10 +35,10 @@ body[data-theme="dark"] {
   --text-soft: #7d7d7d;
   --border: #2f333a;
   --accent: #07c160;
-  --highlight: #3a362b;         /* 深色下的划线：暗灰黄，只比底色亮一点点 */
+  --highlight: #4a6fa5;         /* 深色下的划线：中饱和蓝实底，蓝味明确、夜间不刺眼 */
   --note: #8ab4f8;              /* 注释色：照片里那种淡蓝 */
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  --quote-line: #3c4348;
+  --quote-line: #5d84b8;
 }
 
 /* 让原生控件（输入框、下拉框、滚动条）跟随主题，不会在深色里冒白 */
@@ -423,12 +423,12 @@ button {
    文字仍用正文色，选区看得清但不跳，深色主题下也不会一块荧光蓝。
    不用 var()：::selection 的自定义属性继承在部分内核里不生效。 */
 ::selection {
-  background-color: rgba(90, 120, 110, 0.18);
+  background-color: rgba(88, 140, 190, 0.20);
   color: #1a1a1a;
   text-shadow: none;
 }
 body[data-theme="dark"] ::selection {
-  background-color: rgba(150, 180, 170, 0.20);
+  background-color: rgba(80, 120, 180, 0.80);
   color: #d6d6d6;
 }
 
@@ -443,14 +443,14 @@ body[data-theme="dark"] ::selection {
 /* 选句朗读：先把「你选中的整段」标淡色，正在读的那一句再叠深一点。
    全文朗读没有选中区域，只显示下面那条 tts-current。 */
 ::highlight(tts-selection) {
-  background-color: rgba(120, 145, 138, 0.14);
+  background-color: rgba(90, 140, 200, 0.18);
   color: inherit;
 }
 
 /* 全文朗读 / 选句朗读：只给「正在读的这一句」加深一点。
    用 CSS Custom Highlight API 标精确的句子范围，不会整段变色。 */
 ::highlight(tts-current) {
-  background-color: rgba(120, 145, 138, 0.26);
+  background-color: rgba(90, 140, 200, 0.38);
   color: inherit;
 }
 
@@ -458,7 +458,7 @@ body[data-theme="dark"] ::selection {
    用 CSS Custom Highlight API：不改 DOM、不影响文字排版，也不会像选区那样标一大块。
    （WebView2 / 新版 Edge 都支持；万一不支持，app.js 会退回“只选中这个词”。） */
 ::highlight(jump-target) {
-  background-color: rgba(130, 160, 175, 0.24);
+  background-color: rgba(100, 150, 210, 0.42);
   color: inherit;
 }
 
@@ -1162,4 +1162,23 @@ body[data-theme="dark"] #theme-dark {
 @media (max-width: 640px) {
   .reader-actions .btn-text { padding: 6px 4px; font-size: 13px; }
   .book-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px; }
+}
+/* ---------- 账号与云端同步 ---------- */
+.account-box { padding-bottom: 2px; }
+.account-msg { min-height: 18px; padding-top: 8px; color: var(--accent); }
+.account-msg.is-error { color: #d9534f; }
+.account-email {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+}
+.setting-hint code {
+  padding: 1px 4px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--text);
 }

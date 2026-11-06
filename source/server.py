@@ -55,7 +55,12 @@ from typing import Dict
 from bs4 import BeautifulSoup
 from flask import Flask, Response, jsonify, make_response, render_template, request
 
-from config import DEFAULT_CONFIG_PATH, save_api_settings, save_theme
+from config import (
+    DEFAULT_CONFIG_PATH,
+    save_api_settings,
+    save_cloud_settings,
+    save_theme,
+)
 from epub_processor import get_chapter_html, parse_epub
 from state_manager import (
     Store,
@@ -67,6 +72,7 @@ from state_manager import (
 )
 from translator import FatalAPIError, Translator, test_connection
 from tts_engine import synthesize_english
+from cloud import AuthError, CloudError, NetworkError, SyncEngine
 
 # 正在进行的翻译任务：book_hash -> {"cancel": Event, "progress": dict}
 JOBS: Dict[str, dict] = {}
@@ -121,6 +127,13 @@ def create_app(cfg, static_folder: str | None = None,
     # 老书没有语种记录：启动时补测一次（中文书阅读器不显示翻译功能）
     store.backfill_languages()
     app.config["TRANSLATOR"] = Translator(cfg, store)
+    # 云端账号 / 同步（没配 [cloud] 时所有接口都会给一句"还没配置"的提示，不影响本地功能）
+    app.config["CLOUD"] = SyncEngine(
+        store,
+        os.path.join(cfg.state_dir, "cloud.json"),
+        getattr(cfg, "supabase_url", "") or "",
+        getattr(cfg, "supabase_anon_key", "") or "",
+    )
     # 让返回的中文不被转义成 \uXXXX（Flask 3 的写法）
     app.json.ensure_ascii = False
 
@@ -652,6 +665,127 @@ def create_app(cfg, static_folder: str | None = None,
     def delete_annotation(anno_id):
         store.delete_annotation(anno_id)
         return jsonify({"ok": True})
+
+    # ------------------------------------------------------------------
+    # 阅读进度（存本地库，云端同步的数据源）
+    # 以前只记在浏览器 localStorage：换设备 / 换端口就丢，也没法同步。
+    # ------------------------------------------------------------------
+    @app.post("/api/books/<book_hash>/progress")
+    def save_progress(book_hash):
+        body = request.get_json(silent=True) or {}
+        try:
+            chapter_index = int(body.get("chapter_index") or 0)
+        except (TypeError, ValueError):
+            chapter_index = 0
+        seg_index = body.get("seg_index")
+        try:
+            seg_index = int(seg_index) if seg_index is not None else None
+        except (TypeError, ValueError):
+            seg_index = None
+        try:
+            percent = float(body.get("percent") or 0)
+        except (TypeError, ValueError):
+            percent = 0.0
+        store.set_progress(book_hash, chapter_index, seg_index, percent)
+        return jsonify({"ok": True})
+
+    @app.get("/api/progress")
+    def list_progress():
+        """一次返回所有书的进度，书架渲染时不用逐本请求。"""
+        return jsonify(store.list_progress())
+
+    # ------------------------------------------------------------------
+    # 界面偏好（主题 / 字号 / 行距…）：存库才能跟着账号走
+    # ------------------------------------------------------------------
+    @app.get("/api/prefs")
+    def get_prefs():
+        return jsonify({k: v["value"] for k, v in store.list_app_kv().items()})
+
+    @app.post("/api/prefs")
+    def save_prefs():
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "格式不对，需要 JSON 对象。"}), 400
+        for key, value in body.items():
+            if not isinstance(key, str) or len(key) > 64:
+                continue
+            store.set_app_kv(key, value)
+        return jsonify({"ok": True})
+
+    # ------------------------------------------------------------------
+    # 账号 + 云端同步
+    # ------------------------------------------------------------------
+    def _cloud():
+        return app.config["CLOUD"]
+
+    def _cloud_guard(fn):
+        """把所有云端异常转成 {error: 中文}，前端直接弹出来即可。"""
+        try:
+            return jsonify(fn())
+        except (AuthError, NetworkError, CloudError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001 - 兜底，别让 500 变成白屏
+            app.logger.exception("云端操作失败")
+            return jsonify({"error": f"云端操作失败：{exc}"}), 500
+
+    @app.get("/api/cloud/status")
+    def cloud_status():
+        def _status():
+            data = _cloud().status()
+            data["enabled"] = bool(getattr(cfg, "sync_enabled", True))
+            return data
+        return _cloud_guard(_status)
+
+    @app.post("/api/cloud/config")
+    def cloud_config():
+        """
+        在界面里填云端地址 / 密钥（安卓版必需：config.ini 在应用私有目录里，
+        用户拿不到文件）。保存后立刻生效，不用重启。
+        """
+        body = request.get_json(silent=True) or {}
+        url = (body.get("url") or "").strip().rstrip("/")
+        key = (body.get("key") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return jsonify({"error": "地址要以 http:// 或 https:// 开头（形如 https://xxx.supabase.co）。"}), 400
+        if not key:
+            return jsonify({"error": "请填写 anon / public key。"}), 400
+
+        cfg_path = getattr(cfg, "config_path", "") or ""
+        try:
+            if cfg_path:
+                with _CONFIG_LOCK:
+                    save_cloud_settings(cfg_path, url, key)
+        except OSError as exc:
+            return jsonify({"error": f"写入 config.ini 失败：{exc}"}), 500
+
+        cfg.supabase_url, cfg.supabase_anon_key = url, key
+        engine = _cloud()
+        engine.reconfigure(url, key)
+        return jsonify(engine.status())
+
+    @app.post("/api/cloud/login")
+    def cloud_login():
+        body = request.get_json(silent=True) or {}
+        return _cloud_guard(
+            lambda: _cloud().login(body.get("email", ""), body.get("password", ""))
+        )
+
+    @app.post("/api/cloud/register")
+    def cloud_register():
+        body = request.get_json(silent=True) or {}
+        return _cloud_guard(
+            lambda: _cloud().register(body.get("email", ""), body.get("password", ""))
+        )
+
+    @app.post("/api/cloud/logout")
+    def cloud_logout():
+        return _cloud_guard(lambda: _cloud().logout())
+
+    @app.post("/api/cloud/sync")
+    def cloud_sync():
+        body = request.get_json(silent=True) or {}
+        full = bool(body.get("full"))
+        return _cloud_guard(lambda: _cloud().sync(full=full))
 
     # ------------------------------------------------------------------
     # 安卓版：应用内检查更新

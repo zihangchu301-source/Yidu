@@ -22,6 +22,7 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -156,6 +157,41 @@ class Store:
                     chapter_index INTEGER,   -- 在哪一章查的（点词条跳回原文用）
                     seg_index     INTEGER    -- 在哪一段查的（全书自增的 data-i）
                 );
+
+                -- ⑦ 阅读进度（从 localStorage 搬进数据库，云端同步才有东西可传）
+                -- seg_index 是全书自增锚点，换设备后同一本书能精确回到那一句。
+                CREATE TABLE IF NOT EXISTS reading_progress (
+                    book_hash     TEXT PRIMARY KEY,
+                    chapter_index INTEGER DEFAULT 0,
+                    seg_index     INTEGER,
+                    percent       REAL DEFAULT 0,   -- 本章滚动比例 0~1，加载完再精调
+                    updated_at    TEXT
+                );
+
+                -- ⑧ 全局键值（主题、字号、行距等界面偏好；不属于任何一本书）
+                CREATE TABLE IF NOT EXISTS app_kv (
+                    key        TEXT PRIMARY KEY,
+                    value      TEXT,
+                    updated_at TEXT
+                );
+
+                -- ⑨ 同步记账：每条记录上次同步时的内容指纹 + 云端时间
+                -- 靠"指纹变了 = 本地改过"判断要不要上传，不用给每张业务表加列。
+                CREATE TABLE IF NOT EXISTS sync_meta (
+                    kind       TEXT NOT NULL,
+                    key        TEXT NOT NULL,
+                    remote_at  TEXT,          -- 云端 updated_at（增量拉取水位）
+                    local_hash TEXT,          -- 上次同步成功时的内容指纹
+                    PRIMARY KEY (kind, key)
+                );
+
+                -- ⑩ 删除墓碑：本地删掉的行不能凭空消失，否则下次同步会从云端"复活"。
+                CREATE TABLE IF NOT EXISTS sync_tombstone (
+                    kind       TEXT NOT NULL,
+                    key        TEXT NOT NULL,
+                    deleted_at TEXT,
+                    PRIMARY KEY (kind, key)
+                );
                 """
             )
             # 兼容旧数据库：老版本的 annotations 表没有这两个列，自动补上
@@ -186,6 +222,17 @@ class Store:
                 self._conn.execute(
                     "ALTER TABLE books ADD COLUMN total_read_seconds INTEGER DEFAULT 0"
                 )
+            # 兼容旧数据库：annotations 补 uid 列。
+            # 本地 id 是自增的，两台设备上同一个笔记会拿到不同 id，没法对齐；
+            # 所以每条标注给一个与设备无关的 uid，云端按 uid 合并。
+            if "uid" not in cols:
+                self._conn.execute("ALTER TABLE annotations ADD COLUMN uid TEXT")
+            self._conn.execute(
+                "UPDATE annotations SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL"
+            )
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_uid ON annotations(uid)"
+            )
             self._conn.commit()
 
     # ==================================================================
@@ -284,7 +331,14 @@ class Store:
     def delete_book(self, book_hash: str) -> None:
         """删除一本书及其全部关联数据。"""
         with self._lock:
-            for table in ("books", "segments", "meta", "annotations"):
+            # 先记墓碑再删：删完就查不到 uid 了，云端那边会以为这些笔记还在
+            self._add_tombstone("book", book_hash)
+            for row in self._conn.execute(
+                "SELECT uid FROM annotations WHERE book_hash = ? AND uid IS NOT NULL",
+                (book_hash,),
+            ).fetchall():
+                self._add_tombstone("annotation", row["uid"])
+            for table in ("books", "segments", "meta", "annotations", "reading_progress"):
                 self._conn.execute(f"DELETE FROM {table} WHERE book_hash = ?", (book_hash,))
             self._conn.commit()
 
@@ -514,6 +568,8 @@ class Store:
     def clear_dict_history(self) -> None:
         """清空查词记录（只清记录，词典缓存不动，已查过的词再查也不花钱）。"""
         with self._lock:
+            for row in self._conn.execute("SELECT word FROM dict_history").fetchall():
+                self._add_tombstone("dict", (row["word"] or "").lower())
             self._conn.execute("DELETE FROM dict_history")
             self._conn.commit()
 
@@ -530,6 +586,8 @@ class Store:
             cur = self._conn.execute(
                 "DELETE FROM dict_history WHERE word = ? COLLATE NOCASE", (word,)
             )
+            if cur.rowcount:
+                self._add_tombstone("dict", word.lower())
             self._conn.commit()
             return int(cur.rowcount or 0)
 
@@ -552,12 +610,12 @@ class Store:
             cur = self._conn.execute(
                 """
                 INSERT INTO annotations
-                    (book_hash, chapter_index, seg_index, type, text, note,
+                    (uid, book_hash, chapter_index, seg_index, type, text, note,
                      char_start, char_end, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (book_hash, chapter_index, seg_index, anno_type, text, note,
-                 char_start, char_end, _now()),
+                (uuid.uuid4().hex, book_hash, chapter_index, seg_index, anno_type,
+                 text, note, char_start, char_end, _now()),
             )
             self._conn.commit()
             return int(cur.lastrowid)
@@ -616,5 +674,322 @@ class Store:
 
     def delete_annotation(self, anno_id: int) -> None:
         with self._lock:
+            row = self._conn.execute(
+                "SELECT uid FROM annotations WHERE id = ?", (anno_id,)
+            ).fetchone()
             self._conn.execute("DELETE FROM annotations WHERE id = ?", (anno_id,))
+            if row and row["uid"]:
+                self._add_tombstone("annotation", row["uid"])
+            self._conn.commit()
+
+    # ==================================================================
+    # ⑥ 阅读进度 / 全局偏好（云端同步的数据来源）
+    # ==================================================================
+    def _upsert(self, table: str, keys: dict, values: dict) -> None:
+        """
+        可移植的 upsert：先 UPDATE，没命中再 INSERT。
+
+        为什么不用 `ON CONFLICT ... DO UPDATE`：安卓 7（minSdk 24）自带
+        SQLite 3.9，不支持这个语法（3.24+ 才有），用了会直接抛语法错。
+        """
+        where = " AND ".join(f"{k} = ?" for k in keys)
+        cur = self._conn.execute(
+            f"UPDATE {table} SET " + ", ".join(f"{k} = ?" for k in values) +
+            f" WHERE {where}",
+            list(values.values()) + list(keys.values()),
+        )
+        if cur.rowcount == 0:
+            cols = list(keys) + list(values)
+            placeholders = ", ".join("?" for _ in cols)
+            self._conn.execute(
+                f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})",
+                list(keys.values()) + list(values.values()),
+            )
+
+    def set_progress(
+        self,
+        book_hash: str,
+        chapter_index: int,
+        seg_index: Optional[int] = None,
+        percent: float = 0.0,
+    ) -> None:
+        """记下这本书读到哪（章号 + 段锚点 + 章内比例）。"""
+        with self._lock:
+            self._upsert(
+                "reading_progress",
+                {"book_hash": book_hash},
+                {
+                    "chapter_index": int(chapter_index or 0),
+                    "seg_index": seg_index,
+                    "percent": float(percent or 0),
+                    "updated_at": _now(),
+                },
+            )
+            self._conn.commit()
+
+    def get_progress(self, book_hash: str) -> Optional[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM reading_progress WHERE book_hash = ?", (book_hash,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_progress(self) -> Dict[str, dict]:
+        """{book_hash: 进度}，书架一次取全，避免逐本查询。"""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM reading_progress").fetchall()
+        return {r["book_hash"]: dict(r) for r in rows}
+
+    def set_app_kv(self, key: str, value) -> None:
+        """存一个全局偏好（主题 / 字号 / 行距…），value 会被 JSON 序列化。"""
+        with self._lock:
+            self._upsert(
+                "app_kv",
+                {"key": key},
+                {"value": json.dumps(value, ensure_ascii=False), "updated_at": _now()},
+            )
+            self._conn.commit()
+
+    def get_app_kv(self, key: str, default=None):
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM app_kv WHERE key = ?", (key,)
+            ).fetchone()
+        if not row:
+            return default
+        try:
+            return json.loads(row["value"])
+        except (ValueError, TypeError):
+            return default
+
+    def list_app_kv(self) -> Dict[str, object]:
+        with self._lock:
+            rows = self._conn.execute("SELECT key, value, updated_at FROM app_kv").fetchall()
+        out = {}
+        for r in rows:
+            try:
+                out[r["key"]] = {"value": json.loads(r["value"]), "updated_at": r["updated_at"]}
+            except (ValueError, TypeError):
+                continue
+        return out
+
+    # ==================================================================
+    # ⑦ 同步支撑：导出本地全量 / 记账 / 落盘云端数据
+    # ==================================================================
+    def _add_tombstone(self, kind: str, key: str) -> None:
+        """记一条删除墓碑（调用方自己负责 commit）。"""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO sync_tombstone (kind, key, deleted_at) VALUES (?, ?, ?)",
+            (kind, key, _now()),
+        )
+
+    def sync_source(self) -> List[dict]:
+        """
+        把本地需要同步的数据摊平成一条条记录。
+
+        返回 [{kind, key, payload, updated_at}]。
+        云端表 yidu_records 就是按 (user_id, kind, key) 存的，这边一一对应。
+        """
+        out: List[dict] = []
+        with self._lock:
+            for r in self._conn.execute("SELECT * FROM books").fetchall():
+                out.append({
+                    "kind": "book",
+                    "key": r["book_hash"],
+                    "payload": {
+                        "title": r["title"],
+                        "author": r["author"],
+                        "chapter_count": r["chapter_count"],
+                        "seg_count": r["seg_count"],
+                        "language": r["language"],
+                        "added_at": r["added_at"],
+                    },
+                    "updated_at": r["added_at"] or _now(),
+                })
+            for r in self._conn.execute("SELECT * FROM reading_progress").fetchall():
+                out.append({
+                    "kind": "progress",
+                    "key": r["book_hash"],
+                    "payload": {
+                        "chapter_index": r["chapter_index"],
+                        "seg_index": r["seg_index"],
+                        "percent": r["percent"],
+                    },
+                    "updated_at": r["updated_at"] or _now(),
+                })
+            for r in self._conn.execute(
+                "SELECT * FROM annotations WHERE uid IS NOT NULL"
+            ).fetchall():
+                out.append({
+                    "kind": "annotation",
+                    "key": r["uid"],
+                    "payload": {
+                        "book_hash": r["book_hash"],
+                        "chapter_index": r["chapter_index"],
+                        "seg_index": r["seg_index"],
+                        "type": r["type"],
+                        "text": r["text"],
+                        "note": r["note"],
+                        "char_start": r["char_start"],
+                        "char_end": r["char_end"],
+                        "created_at": r["created_at"],
+                    },
+                    "updated_at": r["created_at"] or _now(),
+                })
+            for r in self._conn.execute("SELECT * FROM dict_history").fetchall():
+                out.append({
+                    "kind": "dict",
+                    "key": (r["word"] or "").lower(),
+                    "payload": {
+                        "word": r["word"],
+                        "looked_at": r["looked_at"],
+                        "book_hash": r["book_hash"],
+                        "chapter_index": r["chapter_index"],
+                        "seg_index": r["seg_index"],
+                    },
+                    "updated_at": r["looked_at"] or _now(),
+                })
+            for r in self._conn.execute("SELECT * FROM app_kv").fetchall():
+                try:
+                    value = json.loads(r["value"])
+                except (ValueError, TypeError):
+                    continue
+                out.append({
+                    "kind": "setting",
+                    "key": r["key"],
+                    "payload": {"value": value},
+                    "updated_at": r["updated_at"] or _now(),
+                })
+        return out
+
+    def tombstones(self) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM sync_tombstone").fetchall()
+        return [
+            {
+                "kind": r["kind"],
+                "key": r["key"],
+                "payload": {},
+                "updated_at": r["deleted_at"] or _now(),
+            }
+            for r in rows
+        ]
+
+    def sync_meta_map(self) -> Dict[tuple, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM sync_meta").fetchall()
+        return {(r["kind"], r["key"]): dict(r) for r in rows}
+
+    def set_sync_meta(self, kind: str, key: str, remote_at: str, local_hash: str) -> None:
+        with self._lock:
+            self._upsert(
+                "sync_meta",
+                {"kind": kind, "key": key},
+                {"remote_at": remote_at, "local_hash": local_hash},
+            )
+            self._conn.commit()
+
+    def clear_tombstone(self, kind: str, key: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM sync_tombstone WHERE kind = ? AND key = ?", (kind, key)
+            )
+            self._conn.commit()
+
+    def apply_remote(self, kind: str, key: str, payload: dict) -> None:
+        """
+        把云端一条记录写进本地（云端更新时调用）。
+        只做"存在即更新 / 不存在即插入"，冲突判断在 cloud.py 里做。
+        """
+        payload = payload or {}
+        with self._lock:
+            if kind == "book":
+                self._upsert(
+                    "books",
+                    {"book_hash": key},
+                    {
+                        "title": payload.get("title"),
+                        "author": payload.get("author"),
+                        "cover": None,
+                        "chapter_count": payload.get("chapter_count"),
+                        "seg_count": payload.get("seg_count"),
+                        "language": payload.get("language"),
+                        "added_at": payload.get("added_at") or _now(),
+                    },
+                )
+            elif kind == "progress":
+                self._upsert(
+                    "reading_progress",
+                    {"book_hash": key},
+                    {
+                        "chapter_index": payload.get("chapter_index") or 0,
+                        "seg_index": payload.get("seg_index"),
+                        "percent": payload.get("percent") or 0.0,
+                        "updated_at": payload.get("updated_at") or _now(),
+                    },
+                )
+            elif kind == "annotation":
+                self._upsert(
+                    "annotations",
+                    {"uid": key},
+                    {
+                        "book_hash": payload.get("book_hash"),
+                        "chapter_index": payload.get("chapter_index") or 0,
+                        "seg_index": payload.get("seg_index"),
+                        "type": payload.get("type") or ANNO_NOTE,
+                        "text": payload.get("text") or "",
+                        "note": payload.get("note") or "",
+                        "char_start": payload.get("char_start"),
+                        "char_end": payload.get("char_end"),
+                        "created_at": payload.get("created_at") or _now(),
+                    },
+                )
+            elif kind == "dict":
+                word = payload.get("word") or key
+                # 查词记录只认"最近一次查"的时间，其它字段保留本地的
+                self._upsert(
+                    "dict_history",
+                    {"word": word},
+                    {
+                        "looked_at": payload.get("looked_at") or _now(),
+                        "book_hash": payload.get("book_hash"),
+                        "chapter_index": payload.get("chapter_index"),
+                        "seg_index": payload.get("seg_index"),
+                    },
+                )
+            elif kind == "setting":
+                self._upsert(
+                    "app_kv",
+                    {"key": key},
+                    {
+                        "value": json.dumps(payload.get("value"), ensure_ascii=False),
+                        "updated_at": _now(),
+                    },
+                )
+            self._conn.commit()
+
+    def apply_remote_delete(self, kind: str, key: str) -> None:
+        """云端已删除 → 本地也跟着删（不写墓碑，避免来回弹）。"""
+        with self._lock:
+            if kind == "book":
+                for table in ("books", "segments", "meta", "annotations",
+                              "reading_progress"):
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE book_hash = ?", (key,)
+                    )
+            elif kind == "progress":
+                self._conn.execute(
+                    "DELETE FROM reading_progress WHERE book_hash = ?", (key,)
+                )
+            elif kind == "annotation":
+                self._conn.execute("DELETE FROM annotations WHERE uid = ?", (key,))
+            elif kind == "dict":
+                self._conn.execute(
+                    "DELETE FROM dict_history WHERE word = ? COLLATE NOCASE", (key,)
+                )
+            elif kind == "setting":
+                self._conn.execute("DELETE FROM app_kv WHERE key = ?", (key,))
+            self._conn.execute(
+                "DELETE FROM sync_meta WHERE kind = ? AND key = ?", (kind, key)
+            )
             self._conn.commit()

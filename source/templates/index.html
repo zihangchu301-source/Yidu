@@ -213,6 +213,66 @@
       </div>
     </div>
 
+    <!-- ---- 账号与云端同步（没配置 [cloud] 时只显示一句提示，不影响本地功能）---- -->
+    <div class="setting-section">账号与同步</div>
+    <div id="account-box" class="account-box">
+      <div id="account-unconfigured" hidden>
+        <p class="setting-hint">
+          第一次使用先填下面两项（Supabase 后台 → Project Settings → API）。
+          地址和密钥只存在本机 config.ini 里，不会上传到别处。
+        </p>
+        <div class="setting-row">
+          <span>项目地址</span>
+          <input id="cloud-url" class="setting-input" type="url"
+                 placeholder="https://xxxx.supabase.co" autocomplete="off">
+        </div>
+        <div class="setting-row">
+          <span>anon key</span>
+          <input id="cloud-key" class="setting-input" type="password"
+                 placeholder="eyJhbGciOi…（不是 service_role）" autocomplete="off">
+        </div>
+        <p id="cloud-msg" class="setting-hint account-msg"></p>
+        <div class="setting-actions">
+          <button id="cloud-save" class="btn-primary">保存并启用同步</button>
+        </div>
+      </div>
+
+      <div id="account-logged-out" hidden>
+        <p class="setting-hint">
+          登录后，书库、阅读进度、笔记划线、查词记录会跟着账号走 —— 换手机不用重新导书，也不用再翻到上次那页。
+        </p>
+        <div class="setting-row">
+          <span>邮箱</span>
+          <input id="account-email" class="setting-input" type="email"
+                 placeholder="you@example.com" autocomplete="username">
+        </div>
+        <div class="setting-row">
+          <span>密码</span>
+          <input id="account-password" class="setting-input" type="password"
+                 placeholder="至少 6 位" autocomplete="current-password">
+        </div>
+        <p id="account-msg" class="setting-hint account-msg"></p>
+        <div class="setting-actions">
+          <button id="account-register" class="btn-text">注册新账号</button>
+          <button id="account-login" class="btn-primary">登录</button>
+        </div>
+      </div>
+
+      <div id="account-logged-in" hidden>
+        <div class="setting-row">
+          <span>当前账号</span>
+          <div class="setting-controls">
+            <span id="account-email-shown" class="account-email">—</span>
+          </div>
+        </div>
+        <p id="account-sync-msg" class="setting-hint account-msg"></p>
+        <div class="setting-actions">
+          <button id="account-logout" class="btn-text">退出登录</button>
+          <button id="account-sync" class="btn-primary">立即同步</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ---- 翻译模型：选厂商 + 填 API（保存后写进 config.ini 并立即生效）---- -->
     <div class="setting-section">翻译模型</div>
     <div class="setting-row">

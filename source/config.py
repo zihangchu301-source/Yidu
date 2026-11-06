@@ -72,9 +72,15 @@ class Config:
     default_font_size: int
     default_theme: str
 
+    # ---- [cloud] ----
+    supabase_url: str
+    supabase_anon_key: str
+    sync_enabled: bool
+
     # ---- 派生路径 ----
     state_dir: str         # 数据库目录
     books_dir: str         # 书库目录（存放导入的 epub 及其资源）
+    config_path: str = ""  # config.ini 实际路径（设置面板回写用）
 
     @property
     def db_path(self) -> str:
@@ -97,7 +103,7 @@ def save_theme(path: str, theme: str) -> None:
     with open(path, "r", encoding="utf-8-sig") as f:
         lines = f.readlines()
 
-    pattern = re.compile(r"^(\s*default_theme\s*=\s*).*$")
+    pattern = re.compile(r"^([ \t]*default_theme[ \t]*=[ \t]*)(.*)$")
     ui_start = None
     ui_end = len(lines)
     found = False
@@ -146,7 +152,7 @@ def save_api_settings(path: str, api_key: str, base_url: str, model: str) -> Non
     def _replace_in_api_section(key: str, value: str) -> bool:
         """在 [api] 段落里把 `key = ...` 这一行的值换掉；成功返回 True。"""
         in_api = False
-        pattern = re.compile(r"^(\s*" + re.escape(key) + r"\s*=\s*).*$")
+        pattern = re.compile(r"^([ \t]*" + re.escape(key) + r"[ \t]*=[ \t]*)(.*)$")
         for i, line in enumerate(lines):
             stripped = line.strip()
             if stripped.startswith("[") and stripped.endswith("]"):
@@ -168,6 +174,48 @@ def save_api_settings(path: str, api_key: str, base_url: str, model: str) -> Non
         lines.append(f"api_key = {api_key}\n")
         lines.append(f"base_url = {base_url}\n")
         lines.append(f"model = {model}\n")
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def save_cloud_settings(path: str, url: str, anon_key: str) -> None:
+    """
+    把 [cloud] 段的 supabase_url / supabase_anon_key 写回 config.ini。
+
+    为什么要这个：安卓版的 config.ini 在应用私有目录里，用户根本摸不到，
+    只能在 App 里填。写法和 save_api_settings 一样用"按行替换"，
+    保住文件里的中文注释，只改这两行。
+
+    :raises OSError: 文件不可写
+    """
+    ensure_cloud_section(path)
+
+    with open(path, "r", encoding="utf-8-sig") as f:
+        lines = f.readlines()
+
+    def _replace(key: str, value: str) -> bool:
+        in_cloud = False
+        pattern = re.compile(r"^([ \t]*" + re.escape(key) + r"[ \t]*=[ \t]*)(.*)$")
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_cloud = stripped == "[cloud]"
+                continue
+            if in_cloud and pattern.match(line):
+                lines[i] = pattern.sub(lambda m: m.group(1) + value, line)
+                return True
+        return False
+
+    changed = False
+    for key, value in (("supabase_url", url), ("supabase_anon_key", anon_key)):
+        if _replace(key, value):
+            changed = True
+    if not changed:
+        lines.append("\n[cloud]\n")
+        lines.append(f"supabase_url = {url}\n")
+        lines.append(f"supabase_anon_key = {anon_key}\n")
+        lines.append("sync_enabled = true\n")
 
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(lines)
@@ -197,6 +245,39 @@ def _get(cp: configparser.ConfigParser, section: str, option: str, default, kind
     return value.strip() if kind is str else value
 
 
+_CLOUD_SECTION_TEMPLATE = """
+[cloud]
+; ---- 账号与云端同步（留空也能正常读书，只是不能跨设备同步）----
+; 去 Supabase 后台 → Project Settings → API 复制这两个值填进来；
+; 只填 anon / public key，**不要**填 service_role key（那个会绕过所有权限）。
+; 建表：把 docs/supabase_schema.sql 全文粘到 SQL Editor 执行一次。
+supabase_url      =
+supabase_anon_key =
+sync_enabled      = true
+"""
+
+
+def ensure_cloud_section(path: str) -> None:
+    """
+    老版本的 config.ini 里没有 [cloud] 段 —— 直接补一段空白的上去。
+
+    为什么要动文件：不然用户想开同步，打开配置却找不到可以填的地方，
+    只能靠文档描述"请手动加一段"，零基础用户会卡在这一步。
+    只在缺段时追加，已有内容一行不动；文件不可写就安静跳过。
+    """
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            text = fh.read()
+        if "[cloud]" in text:
+            return
+        with open(path, "a", encoding="utf-8") as fh:
+            if not text.endswith("\n"):
+                fh.write("\n")
+            fh.write(_CLOUD_SECTION_TEMPLATE)
+    except OSError:
+        pass
+
+
 # ----------------------------------------------------------------------
 # 主入口
 # ----------------------------------------------------------------------
@@ -210,6 +291,8 @@ def load_config(path: str | None = None) -> Config:
     path = path or DEFAULT_CONFIG_PATH
     if not os.path.isfile(path):
         raise ConfigError(f"未找到配置文件：{path}\n请先填写 config.ini。")
+
+    ensure_cloud_section(path)   # 老配置自动补 [cloud] 段（缺了就用默认值，不影响启动）
 
     cp = configparser.ConfigParser()
     cp.optionxform = str  # 保留键名原始大小写
@@ -264,7 +347,12 @@ def load_config(path: str | None = None) -> Config:
         # [ui]
         default_font_size=_get(cp, "ui", "default_font_size", 19, int),
         default_theme=theme,
+        # [cloud] 云端账号 / 同步（不填就只做本地阅读，不影响任何现有功能）
+        supabase_url=_get(cp, "cloud", "supabase_url", "").rstrip("/"),
+        supabase_anon_key=_get(cp, "cloud", "supabase_anon_key", ""),
+        sync_enabled=_get(cp, "cloud", "sync_enabled", True, bool),
         # 派生
         state_dir=state_dir,
         books_dir=books_dir,
+        config_path=path,
     )

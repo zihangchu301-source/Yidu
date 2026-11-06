@@ -1,6 +1,6 @@
 # 译读 · 项目交接文档
 
-> 最后更新：2026-11-05 · 安卓最新版 **1.0.29**（version_code 29）
+> 最后更新：2026-11-06 · 安卓最新版 **1.0.30**（version_code 30）· 新增账号 + 云端同步
 
 ## 1. 源码在哪
 
@@ -120,12 +120,34 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 **待办**：
 
 1. `D:\EPUBReader\config.ini` 里 DeepSeek API Key 明文存储 → 需轮换密钥并改用环境变量/系统凭据
-2. 手机与电脑数据不互通 → 需账号 + 云端数据库，或做导出/导入
+2. ~~手机与电脑数据不互通~~ → **已做**：Supabase 账号 + 云端同步，见第 9 节与 `docs/cloud-sync.md`（等用户建好云端项目后真机验证）
 3. 安卓版 TTS 朗读不可用（依赖 Windows .NET 语音）
 4. 若 1.0.29 仍有黑带：检查系统「隐藏屏幕刘海/挖孔」是否开启；再不行回退 1.0.26 方案（保留状态栏 + 染色，用户已确认无黑框）
 5. 前端还有一批未提交的样式改动已被 1.0.29 打包（划线底色改柔和米黄 `--highlight`、对照译文左侧竖线 `--quote-line`），如需回退单独处理
 
-## 9. 常用命令
+## 9. 云端账号与同步（2026-11-06 新增）
+
+目标：一个账号，手机和电脑的书库 / 进度 / 笔记 / 查词自动对齐。完整操作步骤见 `docs/cloud-sync.md`，建表 SQL 见 `docs/supabase_schema.sql`。
+
+| 文件 | 作用 |
+|---|---|
+| `source/cloud.py` | Supabase Auth + Data API 客户端（纯 `urllib`）、会话持久化、`SyncEngine` |
+| `source/config.py` | `[cloud]` 段（`supabase_url` / `supabase_anon_key` / `sync_enabled`）；`ensure_cloud_section()` 给老配置自动补段；`save_cloud_settings()` 界面回写 |
+| `source/state_manager.py` | 新增 `reading_progress` / `app_kv` / `sync_meta` / `sync_tombstone` 四张表；`annotations.uid`；`sync_source()` / `apply_remote()` / `_upsert()` |
+| `source/server.py` | `/api/cloud/{status,config,login,register,logout,sync}`、`/api/books/<h>/progress`、`/api/progress`、`/api/prefs` |
+| `static/app.js` | 设置面板「账号与同步」；进度落库（防抖 1.5s）；偏好同步 |
+| `tests/test_sync_local.py` | 本地假 Supabase，双设备双向同步回归（`python tests/test_sync_local.py`） |
+
+**几条硬约束，改之前先看**：
+
+- **前端不直连 Supabase**。WebView 的 origin 是 `http://127.0.0.1:<端口>`，端口漂移会让 localStorage 全丢；令牌放后端才与 origin 无关。
+- **不引入 `supabase-py`**。它依赖 pydantic v2（Rust 扩展），Chaquopy 打不进 APK。`cloud.py` 只用标准库，`build.gradle` 的 pip 列表不用动。
+- **不能用 `ON CONFLICT ... DO UPDATE`**。minSdk 24 = Android 7 = SQLite 3.9（3.24 才有 upsert），一律走 `Store._upsert()`。
+- **同步水位只和云端时间比**，本地时间是本机时区的裸字符串，混着比会差 8 小时。
+- **`config.ini` 的 `[cloud]` 只能用 anon key**，`service_role` 绝不能进客户端。
+- 主题**故意不同步**（存 config.ini，设备各管各的）；翻译缓存与阅读时长也不同步，原因写在 `docs/cloud-sync.md`。
+
+## 10. 常用命令
 
 ```bash
 cd /d/yidu
@@ -145,7 +167,7 @@ unzip -p yidu.apk assets/version.json
 
 本机代理不稳定，`git push` 报 `CONNECT tunnel failed 502` 时切换代理节点重试即可。
 
-## 10. 给接力的 AI
+## 11. 给接力的 AI
 
 - 先读 `.workbuddy/memory/` 里最近的日志，再动手
 - `.workbuddy/` 是项目数据，**不要删**
