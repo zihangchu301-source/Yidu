@@ -48,7 +48,8 @@ def _base_dir() -> str:
     """exe（或脚本）所在目录：配置、书库、进度库都在这里。"""
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
+    # 脚本模式：代码在 source/ 里，运行目录是它的上一级（与 exe 模式共用数据）
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _resource_dir() -> str:
@@ -245,10 +246,10 @@ def main() -> int:
 
     app = create_app(cfg)
 
-    # exe 模式：/static 统一指向 exe 旁目录（书库在那里，css/js 上面已同步过去）
+    # exe 模式：把打包在只读资源里的新 css/js/图标覆盖到 exe 旁的 static
+    # （static 目录本身由 create_app 按 cfg.books_dir 自动定位，源码/exe 一致）
     if getattr(sys, "frozen", False):
         _ensure_static_in_base()
-        app.static_folder = os.path.join(_base_dir(), "static")
 
     url = f"http://{cfg.host}:{cfg.port}"
 

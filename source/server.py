@@ -116,10 +116,14 @@ def create_app(cfg, static_folder: str | None = None,
 
     static_folder / template_folder 只在“代码与数据不在同一目录”的场景需要，
     比如安卓版（代码打包在只读资源里，static 要指向应用可写目录）。
-    桌面版 / exe 版传空即可，行为与以前完全一致。
+    桌面版不传时，static 自动指到运行目录下的 static（和书库 books/ 同一个地方），
+    这样源码运行和 exe 运行看到的是同一套 css/js。
     """
+    if not static_folder:
+        # books_dir = <运行目录>/static/books，往上取一层就是 static
+        static_folder = os.path.dirname(cfg.books_dir)
     app = Flask(__name__,
-                static_folder=static_folder or "static",
+                static_folder=static_folder,
                 template_folder=template_folder or "templates")
     app.config["CFG"] = cfg
     store = Store(cfg.db_path)

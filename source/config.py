@@ -31,7 +31,10 @@ if _ENV_HOME:
 elif getattr(sys, "frozen", False):
     _BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
 else:
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    # 脚本模式：代码在 source/ 里，运行目录是它的上一级。
+    # 这样和 exe 模式用的是同一份 config.ini / state / static，
+    # 不会出现"源码跑一份数据、exe 跑另一份"的两套书库。
+    _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # config.ini 默认与基准目录同目录
 DEFAULT_CONFIG_PATH = os.path.join(_BASE_DIR, "config.ini")

@@ -6,46 +6,63 @@
 
 | 用途 | 路径 |
 |---|---|
-| **手机版主开发目录（推荐，含完整 .git）** | `D:\yidu` |
+| **唯一开发目录（桌面版 + 手机版，含完整 .git）** | `D:\EPUBReader` |
 | **远程仓库** | https://github.com/zihangchu301-source/Yidu |
 | 主仓库原始副本（同样含 .git） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu-repo` |
-| 桌面版**实际运行目录**（含数据、exe） | `D:\EPUBReader` |
-| 桌面版工作副本（2026-11-05 迁移） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_desktop` |
+| 桌面版工作副本（2026-11-05 迁移，已过时） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_desktop` |
 | 手机版源码快照（无 .git，别改） | `E:\workbuddyClaw\2026-11-03-18-15-07\Yidu_phone` |
 | 安卓签名密钥备份（**勿外泄**） | `E:\workbuddyClaw\2026-11-03-18-15-07\signing\` |
-| 本次会话工作日志 | `E:\workbuddyClaw\2026-11-03-18-15-07\.workbuddy\memory\2026-11-05.md` |
+| 本次会话工作日志 | `E:\workbuddyClaw\2026-11-05-22-51-55\.workbuddy\memory\` |
 
-`D:\yidu` 和 `E:\...\Yidu-repo` 都是**完整 git 仓库**、内容一致、指向同一远程。**以后只在 `D:\yidu` 改代码并 `git push`**；E 盘那份是原位置备份，别两边同时改以免冲突。只有 git push 才会触发自动打包。
-`Yidu_phone` 是纯源码快照（**不含 .git**），仅供查看/交接，改它不会发布。
-`Yidu_desktop` 是 `D:\EPUBReader` 的完整副本（含 `config.ini` 明文密钥、`state/reader.db` 阅读记录、`static/books` 书籍缓存），**不要提交到任何仓库**。原 `D:\EPUBReader` 保留未动。
-桌面版目录是另一份可直接运行的副本，改它不会更新 APK。
+**2026-11-06 起，`D:\yidu` 已并入 `D:\EPUBReader` 并删除。** 现在只有一个目录：
+
+```
+D:\EPUBReader\
+├── EPUBReader.exe        旧版打包产物（无云端同步，可当回退）
+├── 启动阅读器.bat         ← 以后双击这个（跑 .venv\Scripts\pythonw.exe source\app.py）
+├── config.ini            唯一配置（含 API Key 与 [cloud]）
+├── state\                唯一数据目录（reader.db / cloud.json / webview）
+├── static\               唯一静态目录（app.js / style.css / books\ 书在这里）
+├── source\               唯一源码（桌面版和安卓版共用）
+├── .venv\                运行环境（约 200MB，别提交）
+├── android\ .github\ docs\ tests\ python_shims\
+└── .git\                 完整仓库，git push 即触发 APK 打包
+```
+
+关键规则（改代码前必读）：
+- `config.py` / `app.py` 的基准目录：**脚本模式的运行目录 = `source\` 的上一级**，和 exe 模式完全一致。
+  所以源码跑和 exe 跑用的是**同一份 config.ini / state / static**，不会出现两套书库。
+- `create_app()` 的 static 目录由 `cfg.books_dir` 反推（`<运行目录>\static`），
+  源码模式也读这里，不再读 `source\static`（那份是历史残留，已废弃）。
+- `source\启动阅读器.bat` 保留只为兼容老快捷方式，内容改成转发到上一级启动器。
 
 ## 2. 仓库结构
 
 ```
-Yidu-repo/
+D:\EPUBReader/                       # 仓库根 = 桌面版运行目录
 ├── .github/workflows/build-apk.yml   # CI：推 main 自动打包并发布
 ├── android/                          # Chaquopy + WebView 壳
 │   ├── app/build.gradle              # 版本、签名、资源同步、version.json 生成
 │   └── app/src/main/java/.../MainActivity.java
 ├── source/                           # Python 后端（Flask）
 │   ├── server.py / config.py / translator.py / state_manager.py
+│   ├── cloud.py                      # 账号 + 云端同步（Supabase）
 │   └── templates/index.html
-├── static/                           # 前端（安卓构建读这里）
-│   ├── app.js  style.css             # 桌面/安卓共用
+├── static/                           # 前端（桌面和安卓共用，也是书库 books/ 所在）
+│   ├── app.js  style.css
 │   └── mobile.css  mobile.js         # 仅安卓生效
+├── docs/                             # cloud-sync.md（接入步骤）、supabase_schema.sql
+├── tests/                            # test_sync_local.py（假 Supabase 跑双设备同步）
 ├── python_shims/                     # 安卓启动入口 + openai 兼容层
 ├── config.example.ini                # 配置模板
 └── README.md                         # 对外说明（保持简洁）
 ```
 
-注意：`source/static/` 是桌面版旧副本，**安卓构建不读它**。改前端改根目录 `static/`。
+注意：`source/static/` 是桌面版旧副本，**已废弃**（源码模式现在也读根目录 `static/`）。改前端只改根目录 `static/`，一处生效、桌面和安卓都吃到。
 
-桌面版（`D:\EPUBReader`）改 CSS 有个坑：`source/app.py::_ensure_static_in_base()` 在 exe 启动时会拿打包内的 `style.css` 覆盖 exe 旁的 `static\style.css`（内容不一致就 `copy2`）。所以改桌面样式必须同时：
-
-- 改运行目录 `D:\EPUBReader\static\style.css`，并同步 `D:\EPUBReader\source\static\style.css`（源码模式启动、将来 PyInstaller 重打包都读它）；
-- 运行目录那份已设**只读**：老 exe 启动时覆盖会抛 `PermissionError` 被忽略，新样式才不会被打回原样；
-- 要用新打包的 exe 重新同步样式时，先去掉只读（文件属性，或 `attrib -R "D:\EPUBReader\static\style.css"`）。
+关于 `_ensure_static_in_base()`：只在 exe（frozen）模式下运行，作用是拿打包内的 css/js 覆盖 exe 旁的 `static\`。
+2026-11-06 起源码模式也直接读 `D:\EPUBReader\static\`，所以**改完样式刷新页面就能看到，不用再同步 `source/static/`**。
+如果哪天用新 exe 覆盖了样式、想保住手工改动，把目标文件设只读即可（覆盖会抛 `PermissionError` 被忽略）。
 
 ## 3. 架构一句话
 
@@ -150,7 +167,7 @@ CI 有发布自检（三个 asset 必须齐全）和并发排队，别随意删�
 ## 10. 常用命令
 
 ```bash
-cd /d/yidu
+cd /d/EPUBReader
 git status && git log --oneline -3
 git add -A && git commit -m "..." && git push origin main   # 自动触发打包
 
@@ -171,7 +188,8 @@ unzip -p yidu.apk assets/version.json
 
 - 先读 `.workbuddy/memory/` 里最近的日志，再动手
 - `.workbuddy/` 是项目数据，**不要删**
-- **手机版源码统一在 `D:\yidu`**（完整 git 仓库），改完 `git push` 即自动发布；E 盘 `Yidu-repo` 是原位置备份，别两边同时改
+- **源码统一在 `D:\EPUBReader`**（完整 git 仓库），桌面版和手机版是同一套代码，改完 `git push` 即自动发布；E 盘 `Yidu-repo` 是原位置备份，别两边同时改
+- 改完跑一下 `启动阅读器.bat` 自测，再 `git push`
 - 工作区另有 `Yidu_desktop`（桌面版副本）、`Yidu_phone`（无 .git 的源码快照）、`signing`（密钥），都不要在里面改手机版代码
 - 改安卓前端只动 `static/` 下文件和 `app.js` 的 `IS_ANDROID` 分支；桌面行为不能回归
 - 改完推 `main`，等 Actions 成功，把**带版本号的唯一链接**给用户；不要给会被缓存的固定链接

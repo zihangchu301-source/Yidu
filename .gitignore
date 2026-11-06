@@ -34,3 +34,19 @@ __pycache__/
 Thumbs.db
 Desktop.ini
 .DS_Store
+.venv/
+
+# ===== 桌面版打包产物 / 本地文件（仓库并到 D:/EPUBReader 后新增）=====
+EPUBReader.exe
+README.txt
+backup/
+source/build/
+source/dist/
+source/*.spec
+source/icon*.png
+source/main.py
+source/make_icon.py
+source/version_info.txt
+source/state/
+source/static/
+source/icon.ico
