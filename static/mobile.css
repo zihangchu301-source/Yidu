@@ -37,6 +37,28 @@ html.is-android .reader-content .inner {
   line-height: 1.85;
 }
 
+/* 正文对齐：图片 / 分割线与文字共用同一条左右边线。
+   手机上有几本书（比如经济学人的头条图）会整张撑满屏幕，
+   文字却有 16px 缩进 —— 三条不同的对齐线，看着就不整齐。
+   这里用 !important 压住书里自带的宽度，宁可牺牲个别书的自定义排版。 */
+html.is-android .reader-content .inner img,
+html.is-android .reader-content .inner picture,
+html.is-android .reader-content .inner svg,
+html.is-android .reader-content .inner video,
+html.is-android .reader-content .inner figure {
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box;
+}
+html.is-android .reader-content .inner hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
 /* ---------- 一、书架 ---------- */
 html.is-android .shelf-header {
   flex-wrap: wrap;
