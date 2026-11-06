@@ -1,52 +1,45 @@
-# ===== 隐私 / 个人数据（绝不上传）=====
-config.ini
-state/
-backup/
-static/books/
-
-# ===== 构建产物 =====
-source/build/
-source/dist/
-source/state/
 
 # ===== Android 构建 =====
+# ===== Python 缓存 =====
+# ===== 构建产物 =====
+# ===== 桌面版打包产物 / 本地文件（仓库并到 D:/EPUBReader 后新增）=====
+# ===== 系统文件 =====
+# ===== 隐私 / 个人数据（绝不上传）=====
+*.aab
+*.apk
+*.jks
+*.keystore
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+Desktop.ini
+EPUBReader.exe
+README.txt
+Thumbs.db
+__pycache__/
 android/.gradle/
-android/build/
 android/app/build/
-android/local.properties
 android/app/src/main/assets/static/
 android/app/src/main/assets/templates/
 android/app/src/main/assets/version.json
 android/app/src/main/python/
 android/app/yidu-release.jks
+android/build/
 android/captures/
-*.apk
-*.aab
-*.keystore
-*.jks
-
-# ===== Python 缓存 =====
-__pycache__/
-*.pyc
-*.pyo
-
-# ===== 系统文件 =====
-Thumbs.db
-Desktop.ini
-.DS_Store
-.venv/
-
-# ===== 桌面版打包产物 / 本地文件（仓库并到 D:/EPUBReader 后新增）=====
-EPUBReader.exe
-README.txt
+android/local.properties
 backup/
+config.ini
+docs/云端凭据*.md
+source/*.spec
 source/build/
 source/dist/
-source/*.spec
 source/icon*.png
+source/icon.ico
 source/main.py
 source/make_icon.py
-source/version_info.txt
 source/state/
 source/static/
-source/icon.ico
+source/version_info.txt
+state/
+static/books/

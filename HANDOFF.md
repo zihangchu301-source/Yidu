@@ -36,6 +36,21 @@ D:\EPUBReader\
   源码模式也读这里，不再读 `source\static`（那份是历史残留，已废弃）。
 - `source\启动阅读器.bat` 保留只为兼容老快捷方式，内容改成转发到上一级启动器。
 
+## 1.5 云端（Supabase）看这两份
+
+| 文档 | 内容 | 能不能上传 |
+|---|---|---|
+| `docs/后端与云端说明.md` | 云端是什么、数据长什么样、RLS、同步协议、控制台操作、排错、重建步骤 | ✅ 可公开，不含密码 |
+| `docs/云端凭据（勿上传）.md` | 项目 ID / 两把 key / 数据库密码 / Dashboard 密码、轮换与恢复 | ❌ 被 `.gitignore` 排除 |
+
+要点（详见上面第一份）：
+
+- 用的是**阿里云 AnalyticDB PostgreSQL 版里的 Supabase 兼容实例**（杭州，1核2G 免费），不是官方 Supabase
+- 数据只有一张业务表 `yidu_records`（user_id / kind / key / payload / deleted / updated_at），按 user_id 开了 RLS
+- 客户端里那把 **anon key 是公开的**（写死在 `python_shims`，随 APK 发布）；权限边界在 RLS 上，不在 key 上
+- **`service_role` key 和数据库密码绝不能进客户端、绝不能进仓库**
+- 阿里云的 Studio 界面是坏的（API Keys 页面 404 转圈），取 key / 跑 SQL 要用 curl 打 `api/platform/*` 接口
+
 ## 2. 仓库结构
 
 ```
