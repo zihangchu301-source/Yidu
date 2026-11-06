@@ -411,6 +411,13 @@ button {
   font-size: var(--reader-font-size, 19px);
   line-height: 1.9;
   font-family: "PingFang SC Medium", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 两端对齐：不这么写，英文每行右边缘参差不齐（637/612/668…），
+     看着像"没排好"。中文本来就该两端对齐。
+     hyphens 只在浏览器认得 lang 时才断词，见 app.js 给 .inner 设的 lang。 */
+  text-align: justify;
+  text-justify: inter-ideograph;
+  hyphens: auto;
+  -webkit-hyphens: auto;
 }
 .reader-content p { margin: 0 0 1.1em; }
 .reader-content img { max-width: 100%; height: auto; display: block; margin: 1em auto; }

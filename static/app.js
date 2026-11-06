@@ -1109,6 +1109,9 @@ function makeChapterSection(index, data) {
 
   const inner = document.createElement("div");
   inner.className = "inner";
+  // 告诉浏览器这段文字是什么语言：中文两端对齐更自然，英文开着 hyphens 才会断词，
+  // 两端对齐时才不会出现巨大的词间距。
+  inner.setAttribute("lang", state.isZh ? "zh-CN" : "en");
   inner.innerHTML = data.html || "";
 
   // 电子书里经常用 <p> </p>（只有空格或 &nbsp;）来"空一行"。
