@@ -1955,7 +1955,8 @@ function renderSegText(span) {
   }
   span.classList.remove("is-translated");
 
-  const ranges = (state.chapterHighlights[ci] || []).filter(
+  const all = state.chapterHighlights[ci];
+  const ranges = (Array.isArray(all) ? all : []).filter(
     (h) => String(h.seg_index) === String(i)
   );
   if (!ranges.length) {
@@ -2230,7 +2231,7 @@ async function ensureChapterTranslated(ci) {
     const data = await apiPost(
       `/api/books/${state.book.book_hash}/chapter/${ci}/translate`, {});
     state.chapterTranslations[ci] = data.translations || {};
-    state.chapterHighlights[ci] = data.highlights || {};
+    state.chapterHighlights[ci] = Array.isArray(data.highlights) ? data.highlights : [];
     const sec = chapterSection(ci);
     // 译文到位后立刻重绘、插入对照译文块；插在上方的译文会改高度，所以同样要锚住阅读位置
     if (sec) rerenderKeepingPosition(() => rerenderSection(sec));
@@ -2378,6 +2379,7 @@ function textOffsetIn(span, node, offset) {
  * 关键点：这里算出的是选区在段内的字符区间 [start, end)，
  *        所以只给这几个字加底色，而不是整段。
  */
+
 async function highlightSelection() {
   const sel = window.getSelection();
   // 安卓：点工具栏时选区可能已被清掉，用 showSelToolbar 存下的 Range 兜底
@@ -2392,6 +2394,15 @@ async function highlightSelection() {
 
   const spans = Array.from(readerContent.querySelectorAll("span.seg"))
     .filter((span) => range.intersectsNode(span));
+
+  // 选到的是译文块（.seg-zh）或图片：那些不是 span.seg，没有段落序号，
+  // 定位不了也存不了。以前这里直接静默 return，用户以为"点了没反应"。
+  if (!spans.length) {
+    toast(state.langMode === "dual"
+      ? "译文不能划线，请选上面的英文原文"
+      : "没选到正文文字，请重新选中");
+    return;
+  }
 
   for (const span of spans) {
     const i = parseInt(span.dataset.i, 10);
@@ -2411,10 +2422,9 @@ async function highlightSelection() {
 
     const picked = orig.slice(start, end);
 
-    // ① 本地立即生效
-    (state.chapterHighlights[ci] = state.chapterHighlights[ci] || []).push({
-      seg_index: i, start, end,
-    });
+    // ① 本地立即生效（缓存必须是数组，否则 .push 会抛异常，整段画不出来也存不下去）
+    if (!Array.isArray(state.chapterHighlights[ci])) state.chapterHighlights[ci] = [];
+    state.chapterHighlights[ci].push({ seg_index: i, start, end });
     renderSegText(span);
 
     // ② 存到后端（下次打开这本书仍然看得到）
