@@ -1563,7 +1563,9 @@ function showSelToolbar(sel) {
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   // 安卓上点工具栏按钮时 WebView 可能已清掉选区，先把 Range / 位置存好，
   // 让划线、词典、翻译不依赖"当前仍选中"。
-  if (IS_ANDROID && sel.rangeCount) {
+  // 所有平台都存一份选区快照：点工具栏、或者选区被别的操作清掉时，
+  // 划线 / 词典 / 翻译还能靠它继续工作（以前只给安卓存，桌面一丢选区就静默失效）
+  if (sel.rangeCount) {
     lastSelection = {
       text: sel.toString().trim(),
       segIndex: segIndexFromSelection(sel),
@@ -1661,6 +1663,7 @@ selToolbar.addEventListener("click", async (e) => {
       segIndex: segIndexFromSelection(sel),
       context: contextFromSelection(sel),
       rect: sel.getRangeAt(0).getBoundingClientRect(),
+      range: sel.getRangeAt(0).cloneRange(),   // 保留 Range，选区被清掉时还能用
     };
   }
   const rect = (sel && sel.rangeCount)
@@ -2383,9 +2386,10 @@ function textOffsetIn(span, node, offset) {
 async function highlightSelection() {
   const sel = window.getSelection();
   // 安卓：点工具栏时选区可能已被清掉，用 showSelToolbar 存下的 Range 兜底
+  // 选区可能已经被"点工具栏 / 点别处"清掉了：退回 showSelToolbar 时存的快照
   const range = (sel && sel.rangeCount)
     ? sel.getRangeAt(0)
-    : (IS_ANDROID ? lastSelection.range : null);
+    : (lastSelection.range || null);
   if (!range) return;
   if (state.langMode === "zh") {
     toast("中文模式下无法精确定位划线，请先切回「原文」或「对照」");
