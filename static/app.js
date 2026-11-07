@@ -1686,8 +1686,9 @@ selToolbar.addEventListener("click", async (e) => {
       }
       toast("已复制原文");
     } else if (action === "highlight") {
-      await highlightSelection();
-      toast("已划线");
+      const r = await highlightSelection();
+      toast(r.ok ? (r.saved > 1 ? `已划线（${r.saved} 处）` : "已划线") : r.reason);
+      if (r.ok) refreshNotesIfOpen();
     } else if (action === "dictionary") {
       hideSelToolbar();
       showDictionary(rect, text);
@@ -2271,8 +2272,9 @@ bubble.addEventListener("click", async (e) => {
       return;
     }
     if (action === "highlight") {
-      await highlightSelection();
-      toast("已划线");
+      const r = await highlightSelection();
+      toast(r.ok ? (r.saved > 1 ? `已划线（${r.saved} 处）` : "已划线") : r.reason);
+      if (r.ok) refreshNotesIfOpen();
     }
   } catch (err) {
     toast(err.message);
@@ -2383,37 +2385,56 @@ function textOffsetIn(span, node, offset) {
  *        所以只给这几个字加底色，而不是整段。
  */
 
+
+/**
+ * 划完线如果"笔记"面板正开着，立刻刷新它。
+ * 不然面板里还是旧列表 —— 用户会以为"没存进去"（实际存了，只是没重绘）。
+ */
+function refreshNotesIfOpen() {
+  const modal = $("notes-modal");
+  if (!modal || modal.hidden) return;
+  if (!$("notes-detail").hidden && notesBook) {
+    openNotesDetail(notesBook);
+  } else {
+    openNotesOverview();
+  }
+}
+
 async function highlightSelection() {
   const sel = window.getSelection();
-  // 安卓：点工具栏时选区可能已被清掉，用 showSelToolbar 存下的 Range 兜底
   // 选区可能已经被"点工具栏 / 点别处"清掉了：退回 showSelToolbar 时存的快照
   const range = (sel && sel.rangeCount)
     ? sel.getRangeAt(0)
     : (lastSelection.range || null);
-  if (!range) return;
+  // 注意：这个函数**不再自己弹提示**，而是返回结果，由调用方决定说什么。
+  // 以前调用方无条件 toast("已划线")，把真实的失败原因盖掉了 ——
+  // 用户以为成功了，其实什么都没存。
+  if (!range) return { ok: false, reason: "没有选中文字，请重新拖选" };
   if (state.langMode === "zh") {
-    toast("中文模式下无法精确定位划线，请先切回「原文」或「对照」");
-    return;
+    return { ok: false, reason: "中文模式下无法精确定位划线，请切回「原文」或「对照」" };
   }
 
   const spans = Array.from(readerContent.querySelectorAll("span.seg"))
     .filter((span) => range.intersectsNode(span));
 
-  // 选到的是译文块（.seg-zh）或图片：那些不是 span.seg，没有段落序号，
-  // 定位不了也存不了。以前这里直接静默 return，用户以为"点了没反应"。
+  // 选到的是译文块（.seg-zh）、标题栏、图片：它们不在 span.seg 里，
+  // 没有段落序号，定位不了也存不下去。
   if (!spans.length) {
-    toast(state.langMode === "dual"
-      ? "译文不能划线，请选上面的英文原文"
-      : "没选到正文文字，请重新选中");
-    return;
+    return {
+      ok: false,
+      reason: state.langMode === "dual"
+        ? "译文不能划线，请选上面的英文原文"
+        : "这段文字没有段落编号，不能划线（试试正文段落）",
+    };
   }
 
+  let saved = 0;
+  let lastError = "";
   for (const span of spans) {
     const i = parseInt(span.dataset.i, 10);
     const ci = chapterIndexOf(span);
     const orig = span.dataset.orig !== undefined ? span.dataset.orig : span.textContent;
 
-    // 该段与选区重叠的字符区间（默认整段，再按选区两端收紧）
     let start = 0;
     let end = orig.length;
     if (span.contains(range.startContainer)) {
@@ -2426,21 +2447,24 @@ async function highlightSelection() {
 
     const picked = orig.slice(start, end);
 
-    // ① 本地立即生效（缓存必须是数组，否则 .push 会抛异常，整段画不出来也存不下去）
     if (!Array.isArray(state.chapterHighlights[ci])) state.chapterHighlights[ci] = [];
     state.chapterHighlights[ci].push({ seg_index: i, start, end });
     renderSegText(span);
 
-    // ② 存到后端（下次打开这本书仍然看得到）
     try {
       await apiPost(`/api/books/${state.book.book_hash}/annotations`, {
         type: "highlight", chapter_index: ci, seg_index: i,
         start, end, text: picked.slice(0, 200),
       });
+      saved += 1;
     } catch (err) {
-      toast(err.message);
+      lastError = err.message || String(err);
     }
   }
+
+  if (saved > 0) return { ok: true, saved };
+  if (lastError) return { ok: false, reason: "保存失败：" + lastError };
+  return { ok: false, reason: "没选中可划线的文字，请重新拖选" };
 }
 
 /* ---- 笔记 / 划线：仿微信读书的两级页面（总览 → 某本书的明细） ---- */
