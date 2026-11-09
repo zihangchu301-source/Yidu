@@ -703,15 +703,23 @@ def create_app(cfg, static_folder: str | None = None,
             chapter_index = int(body.get("chapter_index") or 0)
         except (TypeError, ValueError):
             chapter_index = 0
-        seg_index = body.get("seg_index")
-        try:
-            seg_index = int(seg_index) if seg_index is not None else None
-        except (TypeError, ValueError):
-            seg_index = None
-        try:
-            percent = float(body.get("percent") or 0)
-        except (TypeError, ValueError):
-            percent = 0.0
+        # 没传的字段沿用库里的旧值：只报章节号的心跳（老客户端 / 朗读等场景）
+        # 不该把已经记好的段锚点冲成 null，否则"回到上次位置"就失效了。
+        prev = store.get_progress(book_hash) or {}
+        if "seg_index" in body:
+            try:
+                seg_index = int(body["seg_index"]) if body["seg_index"] is not None else None
+            except (TypeError, ValueError):
+                seg_index = prev.get("seg_index")
+        else:
+            seg_index = prev.get("seg_index")
+        if "percent" in body:
+            try:
+                percent = float(body.get("percent") or 0)
+            except (TypeError, ValueError):
+                percent = float(prev.get("percent") or 0)
+        else:
+            percent = float(prev.get("percent") or 0)
         store.set_progress(book_hash, chapter_index, seg_index, percent)
         return jsonify({"ok": True})
 

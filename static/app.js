@@ -993,6 +993,16 @@ async function openBook(book) {
     toast(`加载失败：${err.message}`);
   }
 
+  // 回到上次读到的**段落**，而不是这一章的开头。
+  // 图片 / 字体加载会改变高度，所以隔一会儿再校一次。
+  if (remote && remote.chapter_index === startIndex && remote.seg_index !== null
+      && remote.seg_index !== undefined) {
+    const seg = remote.seg_index;
+    scrollToSeg(seg);
+    setTimeout(() => scrollToSeg(seg), 400);
+    setTimeout(() => scrollToSeg(seg), 1100);
+  }
+
   // 同步一次翻译进度（如果之前翻过一部分，直接显示开关可用）
   refreshTranslateState();
 
@@ -1332,14 +1342,102 @@ function updateCurrentChapterUI() {
 
 // 阅读进度落库（供云端同步 / 换设备续读）。
 // 防抖 1.5 秒：连续滚动时只在停下来的那一刻发一次请求。
+//
+// 以前只存"第几章"，而且是"章节变了才存"：
+//   · 在一章里读半小时，一个字都没记；
+//   · 重新打开永远停在那章开头。
+// 现在每停一下就把「章 + 段锚点 + 章内百分比」记一次，翻开时按段锚点回位。
 let progressSaveTimer = null;
+
+/** 当前阅读位置：屏幕上沿附近落在哪一段 / 哪一章。 */
+function currentAnchor() {
+  const box = readerContent.getBoundingClientRect();
+  const x = Math.round(box.left + Math.min(160, box.width / 2));
+  // 多试几个高度：段落之间有空隙，单点很可能落在空白上
+  for (const dy of [120, 70, 170, 220]) {
+    const y = Math.round(box.top + dy);
+    if (y > box.bottom - 4) continue;
+    const el = document.elementFromPoint(x, y);
+    const seg = el && el.closest ? el.closest("span.seg[data-i]") : null;
+    const sec = seg && seg.closest("section.chapter");
+    if (seg && sec) {
+      return {
+        chapter_index: parseInt(sec.dataset.chapter, 10),
+        seg_index: parseInt(seg.dataset.i, 10),
+      };
+    }
+  }
+  // 兜底：线性找第一个"还没滚出去"的段（只在上面都失败时才走）
+  for (const seg of readerContent.querySelectorAll("span.seg[data-i]")) {
+    if (seg.getBoundingClientRect().bottom > box.top + 60) {
+      const sec = seg.closest("section.chapter");
+      if (sec) {
+        return {
+          chapter_index: parseInt(sec.dataset.chapter, 10),
+          seg_index: parseInt(seg.dataset.i, 10),
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function queueProgressSave(bookHash, chapterIndex) {
   clearTimeout(progressSaveTimer);
-  progressSaveTimer = setTimeout(() => {
-    apiPost(`/api/books/${bookHash}/progress`, { chapter_index: chapterIndex })
-      .catch(() => {});   // 存进度失败不该打扰阅读
-  }, 1500);
+  progressSaveTimer = setTimeout(() => saveProgressNow(bookHash, chapterIndex), 1200);
 }
+
+/** 立刻把当前进度写回后端（关窗前 / 切后台时调用）。 */
+function saveProgressNow(bookHash, chapterIndex) {
+  if (!bookHash) return;
+  const anchor = currentAnchor();
+  const max = readerContent.scrollHeight - readerContent.clientHeight;
+  const percent = max > 0 ? Math.min(1, Math.max(0, readerContent.scrollTop / max)) : 0;
+  const body = {
+    chapter_index: chapterIndex !== undefined ? chapterIndex : state.chapterIndex,
+    percent: Math.round(percent * 1000) / 1000,
+  };
+  if (anchor) {
+    body.chapter_index = anchor.chapter_index;
+    body.seg_index = anchor.seg_index;
+  }
+  // 没取到锚点时**不要**带 seg_index 字段：
+  // 后端收到 null 会把上一次记下的好位置冲掉。
+  apiPost(`/api/books/${bookHash}/progress`, body).catch(() => {});
+}
+
+/** 跳到某一章的某一段（恢复到上次读到的地方）。 */
+function scrollToSeg(segIndex) {
+  if (segIndex === null || segIndex === undefined) return false;
+  const seg = readerContent.querySelector(`span.seg[data-i="${CSS.escape(String(segIndex))}"]`);
+  if (!seg) return false;
+  const top = sectionTop(seg.closest("section.chapter")) +
+              (seg.getBoundingClientRect().top -
+               seg.closest("section.chapter").getBoundingClientRect().top);
+  readerContent.scrollTop = Math.max(0, top - 90);
+  return true;
+}
+
+// 滚动停一下就记一次位置（不再依赖"章节有没有变"）
+let anchorTimer = null;
+readerContent.addEventListener("scroll", () => {
+  clearTimeout(anchorTimer);
+  anchorTimer = setTimeout(() => {
+    if (!state.book) return;
+    state.lastSavedChapter = state.chapterIndex;
+    saveProgressNow(state.book.book_hash, state.chapterIndex);
+  }, 800);
+}, { passive: true });
+
+// 切后台 / 关窗口时补一次，避免"读了半天没存上"
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && state.book) {
+    saveProgressNow(state.book.book_hash, state.chapterIndex);
+  }
+});
+window.addEventListener("pagehide", () => {
+  if (state.book) saveProgressNow(state.book.book_hash, state.chapterIndex);
+});
 
 /* ---- 沉浸式顶部栏：平时隐藏，鼠标移到窗口最顶部才滑出 + 「更多」菜单 + 全屏按钮 ---- */
 
